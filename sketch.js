@@ -1,4 +1,4 @@
-// ===== Идеальный блин v8 — кнопка "НАЧАТЬ" =====
+// ===== Идеальный блин v9 — тап на результате сбрасывает + "Рисуй круг" держится =====
 
 let points = [];
 let prevPoint = null;
@@ -31,6 +31,13 @@ let resetTimerId = null;
 // кнопка
 let startBtn = null;
 
+// таймеры показа
+const RESULT_MS = 4500;  // было 9000 — уменьшаем
+const MSG_MS = 3000;     // сообщения тоже короче
+
+// верхняя подсказка
+let headerText = ""; // показывается в режиме drawing
+
 function setup() {
   cnv = createCanvas(windowWidth, windowHeight);
   pixelDensity(1);
@@ -49,6 +56,9 @@ function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
   if (state === "idle" || state === "ready") {
     drawIdleScreen();
+  } else if (state === "drawing") {
+    // при ресайзе (iOS адресная строка) просто перерисуем хедер поверх
+    redrawHeader();
   }
 }
 
@@ -56,7 +66,7 @@ function windowResized() {
 function onPointerDown(e) {
   e.preventDefault();
 
-  // Если на экране есть кнопка — обрабатываем только её
+  // Если на старте — реагируем только на кнопку
   if (state === "idle" || state === "ready") {
     const p = getCanvasPoint(e);
     if (startBtn && pointInRect(p.x, p.y, startBtn)) {
@@ -65,13 +75,21 @@ function onPointerDown(e) {
     return;
   }
 
-  // Во всех остальных состояниях: start рисования
-  clearResetTimer();
-  const p = getCanvasPoint(e);
-  lastPointer = p;
+  // Если показан результат/сообщение — тап = мгновенный сброс (решает “зависание”)
+  if (state === "result" || state === "message") {
+    resetToIdle();
+    return;
+  }
 
-  startDrawing(p.x, p.y);
-  startRafDrawing();
+  // Режим рисования: стартуем штрих
+  if (state === "drawing") {
+    clearResetTimer();
+    const p = getCanvasPoint(e);
+    lastPointer = p;
+
+    startDrawing(p.x, p.y);
+    startRafDrawing();
+  }
 }
 
 function onPointerMove(e) {
@@ -129,6 +147,7 @@ function resetToIdle() {
   isDrawing = false;
   prevPoint = null;
   points = [];
+  headerText = "";
 
   stopRafDrawing();
   clearResetTimer();
@@ -146,7 +165,6 @@ function drawIdleScreen() {
 
   drawFittedTextBlock(lines, width / 2, height * 0.35, width * 0.88, height * 0.35);
 
-  // рисуем кнопку
   const base = min(width, height);
   const btnW = clamp(base * 0.60, 220, 360);
   const btnH = clamp(base * 0.13, 64, 92);
@@ -155,7 +173,6 @@ function drawIdleScreen() {
 
   startBtn = { x: btnX, y: btnY, w: btnW, h: btnH };
 
-  // кнопка (рисуем сами, без CSS)
   noStroke();
   fill(60);
   rect(btnX, btnY, btnW, btnH, 18);
@@ -165,7 +182,6 @@ function drawIdleScreen() {
   textSize(clamp(base * 0.07, 22, 34));
   text("НАЧАТЬ", width / 2, btnY + btnH / 2);
 
-  // подсказка
   fill(80);
   textSize(clamp(base * 0.04, 14, 22));
   text("После старта рисуй пальцем по экрану", width / 2, btnY + btnH + 40);
@@ -174,33 +190,33 @@ function drawIdleScreen() {
 }
 
 function beginSession() {
-  // стартовая “сессия”: чистый экран и ждём касания для рисования
+  // после кнопки мы в “drawing”, показываем хедер и ждём касания, чтобы начать штрих
   state = "drawing";
+  headerText = "Рисуй круг 🥞";
   background(...BG);
+  redrawHeader();
+}
 
-  // маленькая подсказка на 1 секунду (можно убрать)
+// ===== Хедер =====
+function redrawHeader() {
+  if (!headerText) return;
   const base = min(width, height);
-  noStroke();
-  fill(120);
-  textAlign(CENTER, CENTER);
-  textSize(clamp(base * 0.045, 14, 22));
-  text("Рисуй круг 🥞", width / 2, height * 0.12);
+  const h = clamp(base * 0.065, 18, 28);
 
-  setTimeout(() => {
-    if (state === "drawing" && !isDrawing) {
-      // очищаем подсказку, если ещё не начали рисовать
-      background(...BG);
-    }
-  }, 900);
+  // полупрозрачная плашка
+  noStroke();
+  fill(255, 255, 255, 170);
+  rect(0, 0, width, h * 2.2);
+
+  fill(70);
+  textAlign(CENTER, CENTER);
+  textSize(h);
+  text(headerText, width / 2, h * 1.1);
 }
 
 // ===== Рисование =====
 function startDrawing(x, y) {
-  // если мы только что нажали "НАЧАТЬ", мы уже в drawing и фон чистый
-  // но на всякий случай: если вдруг не в drawing — не начинаем
-  if (state !== "drawing") return;
-
-  // при первом касании начинаем реальное рисование
+  // при первом касании начинаем рисование, хедер оставляем
   isDrawing = true;
 
   points = [];
@@ -208,6 +224,7 @@ function startDrawing(x, y) {
   points.push(prevPoint);
 
   stampBrush(x, y);
+  redrawHeader(); // чтобы хедер не “съедался” кистью
 }
 
 function addPointAndDraw(x, y) {
@@ -219,6 +236,7 @@ function addPointAndDraw(x, y) {
     prevPoint = curr;
     points.push(curr);
     stampBrush(x, y);
+    redrawHeader();
     return;
   }
 
@@ -227,6 +245,9 @@ function addPointAndDraw(x, y) {
   stampSegment(prevPoint, curr);
   points.push(curr);
   prevPoint = curr;
+
+  // держим хедер всегда видимым
+  redrawHeader();
 }
 
 function stampSegment(a, b) {
@@ -250,13 +271,13 @@ function finishDrawing() {
   isDrawing = false;
 
   if (points.length < MIN_POINTS) {
-    showMessage(["Слишком мало движения 😄", "Нарисуй блин побольше"], 4500);
+    showMessage(["Слишком мало движения 😄", "Нарисуй блин побольше"], MSG_MS);
     return;
   }
 
   const len = pathLength(points);
   if (len < MIN_PATH_LEN) {
-    showMessage(["Слишком коротко 😈", "Сделай блин побольше"], 4500);
+    showMessage(["Слишком коротко 😈", "Сделай блин побольше"], MSG_MS);
     return;
   }
 
@@ -267,12 +288,12 @@ function finishDrawing() {
   if (gap <= AUTO_CLOSE_GAP) {
     autoClosePath(end, start);
   } else {
-    showMessage(["Блин не замкнулся 😅", "Доведи круг до конца"], 4500);
+    showMessage(["Блин не замкнулся 😅", "Доведи круг до конца"], MSG_MS);
     return;
   }
 
   const roundness = calculateRoundness(points);
-  showResult(roundness, 9000);
+  showResult(roundness, RESULT_MS);
 }
 
 function autoClosePath(from, to) {
@@ -317,6 +338,8 @@ function pathLength(pts) {
 // ===== UI =====
 function showResult(value, ms) {
   state = "result";
+  headerText = "";
+
   background(...BG);
 
   const base = min(width, height);
@@ -333,13 +356,27 @@ function showResult(value, ms) {
   textSize(mid);
   drawWrappedText(getComment(value), width / 2, height * 0.60, width * 0.86, mid * 1.25);
 
+  // Подсказка “тапни для сброса”
+  fill(90);
+  textSize(clamp(base * 0.04, 12, 20));
+  text("Тапни по экрану — новый блин", width / 2, height * 0.78);
+
   setResetTimer(ms);
 }
 
 function showMessage(lines, ms) {
   state = "message";
+  headerText = "";
+
   background(...BG);
   drawFittedTextBlock(lines, width / 2, height / 2, width * 0.88, height * 0.75);
+
+  fill(90);
+  const base = min(width, height);
+  textAlign(CENTER, CENTER);
+  textSize(clamp(base * 0.04, 12, 20));
+  text("Тапни — попробовать снова", width / 2, height * 0.78);
+
   setResetTimer(ms);
 }
 
@@ -376,13 +413,6 @@ function drawFittedTextBlock(lines, cx, cy, maxW, maxH) {
       return;
     }
     size *= 0.92;
-  }
-
-  textSize(16);
-  let y = cy;
-  for (const ln of lines) {
-    text(ln, cx, y);
-    y += 20;
   }
 }
 
