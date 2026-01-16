@@ -1,18 +1,15 @@
-// ===== Идеальный блин — мягкое замыкание + проще старт =====
+// ===== Идеальный блин v8 — кнопка "НАЧАТЬ" =====
+
 let points = [];
-let isDrawing = false;
 let prevPoint = null;
 
 const BG = [255, 248, 230];
 
-// Пороги
 const MIN_POINTS = 80;
 const MIN_PATH_LEN = 500;
 
-// Мягкое замыкание:
-// если конец близко к началу — замыкаем сами
-const AUTO_CLOSE_GAP = 140; // допустимый "недоход" до старта (px)
-const AUTO_CLOSE_STEP = 6;  // шаг штампов при автозамыкании
+const AUTO_CLOSE_GAP = 160;
+const AUTO_CLOSE_STEP = 6;
 
 const CALIBRATION_K = 140;
 
@@ -23,13 +20,20 @@ let FILL_STEP = 1.7;
 let cnv;
 
 // антиобрыв
+let isDrawing = false;
 let lastPointer = { x: 0, y: 0 };
 let rafId = null;
+
+// состояния
+let state = "idle"; // idle | ready | drawing | result | message
+let resetTimerId = null;
+
+// кнопка
+let startBtn = null;
 
 function setup() {
   cnv = createCanvas(windowWidth, windowHeight);
   pixelDensity(1);
-  resetToIdle();
 
   const el = cnv.elt;
   el.style.touchAction = "none";
@@ -37,24 +41,43 @@ function setup() {
   el.addEventListener("pointerdown", onPointerDown, { passive: false });
   el.addEventListener("pointermove", onPointerMove, { passive: false });
   window.addEventListener("pointerup", onPointerUp, { passive: false });
+
+  resetToIdle();
 }
 
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
-  resetToIdle();
+  if (state === "idle" || state === "ready") {
+    drawIdleScreen();
+  }
 }
 
+// ===== Pointer =====
 function onPointerDown(e) {
   e.preventDefault();
+
+  // Если на экране есть кнопка — обрабатываем только её
+  if (state === "idle" || state === "ready") {
+    const p = getCanvasPoint(e);
+    if (startBtn && pointInRect(p.x, p.y, startBtn)) {
+      beginSession();
+    }
+    return;
+  }
+
+  // Во всех остальных состояниях: start рисования
+  clearResetTimer();
   const p = getCanvasPoint(e);
   lastPointer = p;
-  clearForDrawing(p.x, p.y);
+
+  startDrawing(p.x, p.y);
   startRafDrawing();
 }
 
 function onPointerMove(e) {
   if (!isDrawing) return;
   e.preventDefault();
+
   const p = getCanvasPoint(e);
   lastPointer = p;
   addPointAndDraw(p.x, p.y);
@@ -63,10 +86,17 @@ function onPointerMove(e) {
 function onPointerUp(e) {
   if (!isDrawing) return;
   e.preventDefault();
+
   stopRafDrawing();
   finishDrawing();
 }
 
+function getCanvasPoint(e) {
+  const rect = cnv.elt.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
+// ===== RAF антиобрыв =====
 function startRafDrawing() {
   stopRafDrawing();
   const tick = () => {
@@ -82,43 +112,104 @@ function stopRafDrawing() {
   rafId = null;
 }
 
-function getCanvasPoint(e) {
-  const rect = cnv.elt.getBoundingClientRect();
-  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+// ===== Таймеры =====
+function setResetTimer(ms) {
+  clearResetTimer();
+  resetTimerId = setTimeout(() => resetToIdle(), ms);
 }
 
-// ===== ЭКРАН ОЖИДАНИЯ =====
+function clearResetTimer() {
+  if (resetTimerId) clearTimeout(resetTimerId);
+  resetTimerId = null;
+}
+
+// ===== Экран ожидания + кнопка =====
 function resetToIdle() {
-  points = [];
+  state = "idle";
   isDrawing = false;
   prevPoint = null;
-  stopRafDrawing();
+  points = [];
 
+  stopRafDrawing();
+  clearResetTimer();
+
+  drawIdleScreen();
+}
+
+function drawIdleScreen() {
   background(...BG);
 
   const lines = [
     "Нарисуй идеальный блин 🥞",
-    "Коснись и веди пальцем"
+    "Нажми «НАЧАТЬ»"
   ];
 
-  const base = min(width, height);
-  let titleSize = clamp(base * 0.09, 24, 42);
-  let subSize = clamp(base * 0.055, 14, 26);
+  drawFittedTextBlock(lines, width / 2, height * 0.35, width * 0.88, height * 0.35);
 
-  fitAndDrawCenteredBlock(lines, width / 2, height / 2, titleSize, subSize, height * 0.85);
+  // рисуем кнопку
+  const base = min(width, height);
+  const btnW = clamp(base * 0.60, 220, 360);
+  const btnH = clamp(base * 0.13, 64, 92);
+  const btnX = width / 2 - btnW / 2;
+  const btnY = height * 0.55;
+
+  startBtn = { x: btnX, y: btnY, w: btnW, h: btnH };
+
+  // кнопка (рисуем сами, без CSS)
+  noStroke();
+  fill(60);
+  rect(btnX, btnY, btnW, btnH, 18);
+
+  fill(255);
+  textAlign(CENTER, CENTER);
+  textSize(clamp(base * 0.07, 22, 34));
+  text("НАЧАТЬ", width / 2, btnY + btnH / 2);
+
+  // подсказка
+  fill(80);
+  textSize(clamp(base * 0.04, 14, 22));
+  text("После старта рисуй пальцем по экрану", width / 2, btnY + btnH + 40);
+
+  state = "ready";
 }
 
-function clearForDrawing(x, y) {
+function beginSession() {
+  // стартовая “сессия”: чистый экран и ждём касания для рисования
+  state = "drawing";
   background(...BG);
-  points = [];
+
+  // маленькая подсказка на 1 секунду (можно убрать)
+  const base = min(width, height);
+  noStroke();
+  fill(120);
+  textAlign(CENTER, CENTER);
+  textSize(clamp(base * 0.045, 14, 22));
+  text("Рисуй круг 🥞", width / 2, height * 0.12);
+
+  setTimeout(() => {
+    if (state === "drawing" && !isDrawing) {
+      // очищаем подсказку, если ещё не начали рисовать
+      background(...BG);
+    }
+  }, 900);
+}
+
+// ===== Рисование =====
+function startDrawing(x, y) {
+  // если мы только что нажали "НАЧАТЬ", мы уже в drawing и фон чистый
+  // но на всякий случай: если вдруг не в drawing — не начинаем
+  if (state !== "drawing") return;
+
+  // при первом касании начинаем реальное рисование
   isDrawing = true;
 
+  points = [];
   prevPoint = { x, y };
   points.push(prevPoint);
+
   stampBrush(x, y);
 }
 
-// ===== РИСОВАНИЕ (штампы) =====
 function addPointAndDraw(x, y) {
   if (!isDrawing) return;
 
@@ -131,10 +222,9 @@ function addPointAndDraw(x, y) {
     return;
   }
 
-  if (dist(prevPoint.x, prevPoint.y, curr.x, curr.y) < 0.5) return;
+  if (dist(prevPoint.x, prevPoint.y, curr.x, curr.y) < 0.6) return;
 
   stampSegment(prevPoint, curr);
-
   points.push(curr);
   prevPoint = curr;
 }
@@ -145,9 +235,7 @@ function stampSegment(a, b) {
 
   for (let i = 1; i <= steps; i++) {
     const t = i / steps;
-    const ix = lerp(a.x, b.x, t);
-    const iy = lerp(a.y, b.y, t);
-    stampBrush(ix, iy);
+    stampBrush(lerp(a.x, b.x, t), lerp(a.y, b.y, t));
   }
 }
 
@@ -157,11 +245,10 @@ function stampBrush(x, y) {
   circle(x, y, STROKE_W);
 }
 
-// ===== ФИНИШ =====
+// ===== Финиш =====
 function finishDrawing() {
   isDrawing = false;
 
-  // Анти-случайный тап: маловато точек — просим попробовать снова
   if (points.length < MIN_POINTS) {
     showMessage(["Слишком мало движения 😄", "Нарисуй блин побольше"], 4500);
     return;
@@ -173,7 +260,6 @@ function finishDrawing() {
     return;
   }
 
-  // Мягкое замыкание: если конец близко к началу — замыкаем сами
   const start = points[0];
   const end = points[points.length - 1];
   const gap = dist(start.x, start.y, end.x, end.y);
@@ -181,7 +267,6 @@ function finishDrawing() {
   if (gap <= AUTO_CLOSE_GAP) {
     autoClosePath(end, start);
   } else {
-    // Если разрыв большой — честно скажем, что не замкнулось
     showMessage(["Блин не замкнулся 😅", "Доведи круг до конца"], 4500);
     return;
   }
@@ -190,28 +275,22 @@ function finishDrawing() {
   showResult(roundness, 9000);
 }
 
-// Автозамыкание: дорисовываем от end до start штампами и добавляем точки
 function autoClosePath(from, to) {
   const d = dist(from.x, from.y, to.x, to.y);
   const steps = max(1, Math.ceil(d / AUTO_CLOSE_STEP));
-
-  let last = { x: from.x, y: from.y };
 
   for (let i = 1; i <= steps; i++) {
     const t = i / steps;
     const ix = lerp(from.x, to.x, t);
     const iy = lerp(from.y, to.y, t);
-
     stampBrush(ix, iy);
-    const p = { x: ix, y: iy };
-    points.push(p);
-    last = p;
+    points.push({ x: ix, y: iy });
   }
 
-  prevPoint = last;
+  prevPoint = { x: to.x, y: to.y };
 }
 
-// ===== МАТЕМАТИКА =====
+// ===== Математика =====
 function calculateRoundness(pts) {
   let cx = 0, cy = 0;
   for (const p of pts) { cx += p.x; cy += p.y; }
@@ -237,10 +316,11 @@ function pathLength(pts) {
 
 // ===== UI =====
 function showResult(value, ms) {
+  state = "result";
   background(...BG);
 
   const base = min(width, height);
-  const big = clamp(base * 0.16, 42, 88);
+  const big = clamp(base * 0.16, 40, 86);
   const mid = clamp(base * 0.065, 16, 34);
 
   noStroke();
@@ -253,18 +333,14 @@ function showResult(value, ms) {
   textSize(mid);
   drawWrappedText(getComment(value), width / 2, height * 0.60, width * 0.86, mid * 1.25);
 
-  setTimeout(resetToIdle, ms);
+  setResetTimer(ms);
 }
 
 function showMessage(lines, ms) {
+  state = "message";
   background(...BG);
-
-  const base = min(width, height);
-  let size = clamp(base * 0.07, 18, 36);
-
-  fitAndDrawCenteredBlock(lines, width / 2, height / 2, size, size * 0.95, height * 0.85);
-
-  setTimeout(resetToIdle, ms);
+  drawFittedTextBlock(lines, width / 2, height / 2, width * 0.88, height * 0.75);
+  setResetTimer(ms);
 }
 
 function getComment(v) {
@@ -276,66 +352,61 @@ function getComment(v) {
   return "Это арт-объект, не блин 😈";
 }
 
-// ===== ТЕКСТ: авто-влезание + перенос =====
-function fitAndDrawCenteredBlock(lines, x, y, titleSize, subSize, maxBlockHeight) {
-  let t = titleSize;
-  let s = subSize;
+// ===== Текст: гарантированно влезает =====
+function drawFittedTextBlock(lines, cx, cy, maxW, maxH) {
+  let size = clamp(min(width, height) * 0.09, 18, 44);
 
-  for (let i = 0; i < 30; i++) {
-    const h = estimateBlockHeight(lines, t, s);
-    if (h <= maxBlockHeight) break;
-    t *= 0.92;
-    s *= 0.92;
-  }
-
-  drawCenteredTextBlock(lines, x, y, t, s);
-}
-
-function estimateBlockHeight(lines, titleSize, subSize) {
-  if (lines.length === 0) return 0;
-  const titleH = titleSize * 1.1;
-  const subH = (lines.length - 1) * (subSize * 1.35);
-  return titleH + subH;
-}
-
-function drawCenteredTextBlock(lines, x, y, titleSize, subSize) {
+  textAlign(CENTER, CENTER);
   noStroke();
   fill(80);
-  textAlign(CENTER, CENTER);
 
-  const totalH = estimateBlockHeight(lines, titleSize, subSize);
-  let yy = y - totalH / 2;
+  for (let i = 0; i < 45; i++) {
+    textSize(size);
 
-  textSize(titleSize);
-  text(lines[0], x, yy + titleSize * 0.55);
+    const wrapped = lines.flatMap(line => wrapLine(line, maxW));
+    const lineH = size * 1.25;
+    const blockH = wrapped.length * lineH;
 
-  textSize(subSize);
-  for (let i = 1; i < lines.length; i++) {
-    yy += (i === 1 ? titleSize * 1.1 : subSize * 1.35);
-    text(lines[i], x, yy + subSize * 0.55);
+    if (blockH <= maxH) {
+      let y = cy - blockH / 2 + lineH / 2;
+      for (const ln of wrapped) {
+        text(ln, cx, y);
+        y += lineH;
+      }
+      return;
+    }
+    size *= 0.92;
+  }
+
+  textSize(16);
+  let y = cy;
+  for (const ln of lines) {
+    text(ln, cx, y);
+    y += 20;
   }
 }
 
-function drawWrappedText(str, x, y, maxW, lineH) {
-  noStroke();
-  fill(50);
-  textAlign(CENTER, TOP);
-
+function wrapLine(str, maxW) {
   const words = str.split(" ");
   let line = "";
-  let lines = [];
+  const out = [];
 
-  for (let w of words) {
-    const test = line ? line + " " + w : w;
+  for (const w of words) {
+    const test = line ? `${line} ${w}` : w;
     if (textWidth(test) > maxW) {
-      if (line) lines.push(line);
+      if (line) out.push(line);
       line = w;
     } else {
       line = test;
     }
   }
-  if (line) lines.push(line);
+  if (line) out.push(line);
+  return out;
+}
 
+function drawWrappedText(str, x, y, maxW, lineH) {
+  textAlign(CENTER, TOP);
+  const lines = wrapLine(str, maxW);
   const blockH = lines.length * lineH;
   let yy = y - blockH / 2;
 
@@ -346,4 +417,8 @@ function drawWrappedText(str, x, y, maxW, lineH) {
 
 function clamp(v, a, b) {
   return Math.max(a, Math.min(b, v));
+}
+
+function pointInRect(px, py, r) {
+  return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
 }
