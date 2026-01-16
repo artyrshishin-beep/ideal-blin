@@ -1,23 +1,30 @@
-// ===== Идеальный блин — mobile-friendly + без разрывов =====
+// ===== Идеальный блин — мягкое замыкание + проще старт =====
 let points = [];
 let isDrawing = false;
 let prevPoint = null;
 
 const BG = [255, 248, 230];
 
-// Пороги (могут отличаться на телефоне/планшете — подстроим)
+// Пороги
 const MIN_POINTS = 80;
 const MIN_PATH_LEN = 500;
-const MAX_END_GAP = 90;
 
-// Калибровка (меньше => выше проценты)
+// Мягкое замыкание:
+// если конец близко к началу — замыкаем сами
+const AUTO_CLOSE_GAP = 140; // допустимый "недоход" до старта (px)
+const AUTO_CLOSE_STEP = 6;  // шаг штампов при автозамыкании
+
 const CALIBRATION_K = 140;
 
-// Кисть (если всё равно рвётся — STROKE_W вверх, FILL_STEP вниз)
-let STROKE_W = 18;   // на телефоне обычно лучше толще
-let FILL_STEP = 2;   // шаг штампов (меньше => плотнее, но тяжелее)
+// Кисть
+let STROKE_W = 20;
+let FILL_STEP = 1.7;
 
 let cnv;
+
+// антиобрыв
+let lastPointer = { x: 0, y: 0 };
+let rafId = null;
 
 function setup() {
   cnv = createCanvas(windowWidth, windowHeight);
@@ -25,14 +32,11 @@ function setup() {
   resetToIdle();
 
   const el = cnv.elt;
+  el.style.touchAction = "none";
 
-  // Pointer Events — единый механизм для мыши/пальца/стилуса
   el.addEventListener("pointerdown", onPointerDown, { passive: false });
   el.addEventListener("pointermove", onPointerMove, { passive: false });
   window.addEventListener("pointerup", onPointerUp, { passive: false });
-
-  // Чтобы жесты не мешали рисованию
-  el.style.touchAction = "none";
 }
 
 function windowResized() {
@@ -43,28 +47,44 @@ function windowResized() {
 function onPointerDown(e) {
   e.preventDefault();
   const p = getCanvasPoint(e);
+  lastPointer = p;
   clearForDrawing(p.x, p.y);
+  startRafDrawing();
 }
 
 function onPointerMove(e) {
   if (!isDrawing) return;
   e.preventDefault();
   const p = getCanvasPoint(e);
+  lastPointer = p;
   addPointAndDraw(p.x, p.y);
 }
 
 function onPointerUp(e) {
   if (!isDrawing) return;
   e.preventDefault();
+  stopRafDrawing();
   finishDrawing();
+}
+
+function startRafDrawing() {
+  stopRafDrawing();
+  const tick = () => {
+    if (!isDrawing) return;
+    addPointAndDraw(lastPointer.x, lastPointer.y);
+    rafId = requestAnimationFrame(tick);
+  };
+  rafId = requestAnimationFrame(tick);
+}
+
+function stopRafDrawing() {
+  if (rafId) cancelAnimationFrame(rafId);
+  rafId = null;
 }
 
 function getCanvasPoint(e) {
   const rect = cnv.elt.getBoundingClientRect();
-  return {
-    x: e.clientX - rect.left,
-    y: e.clientY - rect.top
-  };
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
 }
 
 // ===== ЭКРАН ОЖИДАНИЯ =====
@@ -72,24 +92,20 @@ function resetToIdle() {
   points = [];
   isDrawing = false;
   prevPoint = null;
+  stopRafDrawing();
 
   background(...BG);
 
-  const base = min(width, height);
-  const titleSize = clamp(base * 0.08, 28, 44);
-  const subSize = clamp(base * 0.045, 16, 26);
+  const lines = [
+    "Нарисуй идеальный блин 🥞",
+    "Коснись и веди пальцем"
+  ];
 
-  drawCenteredTextBlock(
-    [
-      "Нарисуй идеальный блин 🥞",
-      "Коснись и веди пальцем",
-      "Замкни круг — получи %"
-    ],
-    width / 2,
-    height / 2,
-    titleSize,
-    subSize
-  );
+  const base = min(width, height);
+  let titleSize = clamp(base * 0.09, 24, 42);
+  let subSize = clamp(base * 0.055, 14, 26);
+
+  fitAndDrawCenteredBlock(lines, width / 2, height / 2, titleSize, subSize, height * 0.85);
 }
 
 function clearForDrawing(x, y) {
@@ -99,13 +115,13 @@ function clearForDrawing(x, y) {
 
   prevPoint = { x, y };
   points.push(prevPoint);
-
-  // “Точка старта”, чтобы не было дырки в начале
   stampBrush(x, y);
 }
 
-// ===== РИСОВАНИЕ (штампами, чтобы не было разрывов) =====
+// ===== РИСОВАНИЕ (штампы) =====
 function addPointAndDraw(x, y) {
+  if (!isDrawing) return;
+
   const curr = { x, y };
 
   if (!prevPoint) {
@@ -114,6 +130,8 @@ function addPointAndDraw(x, y) {
     stampBrush(x, y);
     return;
   }
+
+  if (dist(prevPoint.x, prevPoint.y, curr.x, curr.y) < 0.5) return;
 
   stampSegment(prevPoint, curr);
 
@@ -143,26 +161,54 @@ function stampBrush(x, y) {
 function finishDrawing() {
   isDrawing = false;
 
+  // Анти-случайный тап: маловато точек — просим попробовать снова
   if (points.length < MIN_POINTS) {
-    showMessage(["Слишком мало теста 😄", "Нарисуй блин побольше"], 4500);
+    showMessage(["Слишком мало движения 😄", "Нарисуй блин побольше"], 4500);
     return;
   }
 
   const len = pathLength(points);
   if (len < MIN_PATH_LEN) {
-    showMessage(["Это не блин, это мазок 😈", "Попробуй кругом"], 4500);
+    showMessage(["Слишком коротко 😈", "Сделай блин побольше"], 4500);
     return;
   }
 
+  // Мягкое замыкание: если конец близко к началу — замыкаем сами
   const start = points[0];
   const end = points[points.length - 1];
-  if (dist(start.x, start.y, end.x, end.y) > MAX_END_GAP) {
+  const gap = dist(start.x, start.y, end.x, end.y);
+
+  if (gap <= AUTO_CLOSE_GAP) {
+    autoClosePath(end, start);
+  } else {
+    // Если разрыв большой — честно скажем, что не замкнулось
     showMessage(["Блин не замкнулся 😅", "Доведи круг до конца"], 4500);
     return;
   }
 
   const roundness = calculateRoundness(points);
   showResult(roundness, 9000);
+}
+
+// Автозамыкание: дорисовываем от end до start штампами и добавляем точки
+function autoClosePath(from, to) {
+  const d = dist(from.x, from.y, to.x, to.y);
+  const steps = max(1, Math.ceil(d / AUTO_CLOSE_STEP));
+
+  let last = { x: from.x, y: from.y };
+
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const ix = lerp(from.x, to.x, t);
+    const iy = lerp(from.y, to.y, t);
+
+    stampBrush(ix, iy);
+    const p = { x: ix, y: iy };
+    points.push(p);
+    last = p;
+  }
+
+  prevPoint = last;
 }
 
 // ===== МАТЕМАТИКА =====
@@ -194,8 +240,8 @@ function showResult(value, ms) {
   background(...BG);
 
   const base = min(width, height);
-  const big = clamp(base * 0.14, 42, 84);
-  const mid = clamp(base * 0.06, 18, 34);
+  const big = clamp(base * 0.16, 42, 88);
+  const mid = clamp(base * 0.065, 16, 34);
 
   noStroke();
   fill(50);
@@ -205,8 +251,7 @@ function showResult(value, ms) {
   text(`🥞 ${Math.round(value)}%`, width / 2, height * 0.45);
 
   textSize(mid);
-  const comment = getComment(value);
-  drawWrappedText(comment, width / 2, height * 0.58, width * 0.86, mid * 1.25);
+  drawWrappedText(getComment(value), width / 2, height * 0.60, width * 0.86, mid * 1.25);
 
   setTimeout(resetToIdle, ms);
 }
@@ -215,9 +260,9 @@ function showMessage(lines, ms) {
   background(...BG);
 
   const base = min(width, height);
-  const mid = clamp(base * 0.065, 18, 34);
+  let size = clamp(base * 0.07, 18, 36);
 
-  drawCenteredTextBlock(lines, width / 2, height / 2, mid, mid * 0.85);
+  fitAndDrawCenteredBlock(lines, width / 2, height / 2, size, size * 0.95, height * 0.85);
 
   setTimeout(resetToIdle, ms);
 }
@@ -231,14 +276,34 @@ function getComment(v) {
   return "Это арт-объект, не блин 😈";
 }
 
-// ===== ТЕКСТ: перенос и масштаб =====
+// ===== ТЕКСТ: авто-влезание + перенос =====
+function fitAndDrawCenteredBlock(lines, x, y, titleSize, subSize, maxBlockHeight) {
+  let t = titleSize;
+  let s = subSize;
+
+  for (let i = 0; i < 30; i++) {
+    const h = estimateBlockHeight(lines, t, s);
+    if (h <= maxBlockHeight) break;
+    t *= 0.92;
+    s *= 0.92;
+  }
+
+  drawCenteredTextBlock(lines, x, y, t, s);
+}
+
+function estimateBlockHeight(lines, titleSize, subSize) {
+  if (lines.length === 0) return 0;
+  const titleH = titleSize * 1.1;
+  const subH = (lines.length - 1) * (subSize * 1.35);
+  return titleH + subH;
+}
+
 function drawCenteredTextBlock(lines, x, y, titleSize, subSize) {
   noStroke();
   fill(80);
   textAlign(CENTER, CENTER);
 
-  // Первая строка крупнее, остальные меньше
-  let totalH = titleSize * 1.1 + (lines.length - 1) * (subSize * 1.35);
+  const totalH = estimateBlockHeight(lines, titleSize, subSize);
   let yy = y - totalH / 2;
 
   textSize(titleSize);
@@ -271,7 +336,6 @@ function drawWrappedText(str, x, y, maxW, lineH) {
   }
   if (line) lines.push(line);
 
-  // центрируем блок по y
   const blockH = lines.length * lineH;
   let yy = y - blockH / 2;
 
