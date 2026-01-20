@@ -50,9 +50,6 @@ const RESULT_MS = 4500;
 const COUNTUP_MS = 850; // скорость набегания (600–1200 обычно ок)
 const MSG_MS = 3000;
 
-function preload() {
-  logoImg = loadImage("assets/logo.png");
-}
 
 function setup() {
   cnv = createCanvas(windowWidth, windowHeight);
