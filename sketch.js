@@ -1,42 +1,58 @@
-// ===== Идеальный блин v9 — тап на результате сбрасывает + "Рисуй круг" держится =====
+// ===== Идеальный блин v10 — брендбук + стабильная логика (Start -> Draw -> Result) =====
 
-let points = [];
-let prevPoint = null;
+/* ====== БРЕНДБУК ====== */
+const THEME = {
+  bg: [239, 231, 221],        // фон
+  primary: [44, 72, 48],      // основной тёмно-зелёный (тексты, заголовки, UI)
+  pancake: [229, 200, 126],   // блинно-жёлтый (блин, успех, идеальное состояние)
+  error: [188, 79, 60],       // красно-оранжевый (ошибка, эмоция)
+  secondary: [39, 76, 119],   // сине-зелёный (вторичные элементы, иконки)
+  hint: [96, 153, 74],        // светло-зелёный (подсказки, нейтраль)
+  light: [255, 255, 255],     // белый
+};
 
-const BG = [255, 248, 230];
+// Алиас (на случай если где-то осталось background(...BG))
+const BG = THEME.bg;
 
+/* ====== НАСТРОЙКИ ЛОГИКИ ====== */
 const MIN_POINTS = 80;
 const MIN_PATH_LEN = 500;
 
-const AUTO_CLOSE_GAP = 160;
-const AUTO_CLOSE_STEP = 6;
+const AUTO_CLOSE_GAP = 160;   // насколько можно "не дотянуть" до начала
+const AUTO_CLOSE_STEP = 6;    // шаг автозамыкания
 
-const CALIBRATION_K = 140;
+// Ты уже ставил 180 — оставляю как текущее
+const CALIBRATION_K = 220;
 
-// Кисть
-let STROKE_W = 20;
-let FILL_STEP = 1.7;
+/* ====== НАСТРОЙКИ КИСТИ ====== */
+let STROKE_W = 20;   // толщина блина
+let FILL_STEP = 1.7; // плотность штампов
+
+/* ====== СОСТОЯНИЕ ====== */
+let points = [];
+let prevPoint = null;
+
+let logoImg;
 
 let cnv;
-
-// антиобрыв
 let isDrawing = false;
 let lastPointer = { x: 0, y: 0 };
 let rafId = null;
 
-// состояния
 let state = "idle"; // idle | ready | drawing | result | message
 let resetTimerId = null;
 
-// кнопка
 let startBtn = null;
+let headerText = "";
 
-// таймеры показа
-const RESULT_MS = 4500;  // было 9000 — уменьшаем
-const MSG_MS = 3000;     // сообщения тоже короче
+// таймеры
+const RESULT_MS = 4500;
+const COUNTUP_MS = 850; // скорость набегания (600–1200 обычно ок)
+const MSG_MS = 3000;
 
-// верхняя подсказка
-let headerText = ""; // показывается в режиме drawing
+function preload() {
+  logoImg = loadImage("assets/logo.png");
+}
 
 function setup() {
   cnv = createCanvas(windowWidth, windowHeight);
@@ -57,16 +73,15 @@ function windowResized() {
   if (state === "idle" || state === "ready") {
     drawIdleScreen();
   } else if (state === "drawing") {
-    // при ресайзе (iOS адресная строка) просто перерисуем хедер поверх
     redrawHeader();
   }
 }
 
-// ===== Pointer =====
+/* ====== POINTER EVENTS ====== */
 function onPointerDown(e) {
   e.preventDefault();
 
-  // Если на старте — реагируем только на кнопку
+  // Стартовый экран: нажимаем только кнопку
   if (state === "idle" || state === "ready") {
     const p = getCanvasPoint(e);
     if (startBtn && pointInRect(p.x, p.y, startBtn)) {
@@ -75,13 +90,13 @@ function onPointerDown(e) {
     return;
   }
 
-  // Если показан результат/сообщение — тап = мгновенный сброс (решает “зависание”)
+  // На результате/сообщении — тап = мгновенный сброс
   if (state === "result" || state === "message") {
     resetToIdle();
     return;
   }
 
-  // Режим рисования: стартуем штрих
+  // Режим рисования — начинаем штрих
   if (state === "drawing") {
     clearResetTimer();
     const p = getCanvasPoint(e);
@@ -114,7 +129,7 @@ function getCanvasPoint(e) {
   return { x: e.clientX - rect.left, y: e.clientY - rect.top };
 }
 
-// ===== RAF антиобрыв =====
+/* ====== RAF (антиобрыв) ====== */
 function startRafDrawing() {
   stopRafDrawing();
   const tick = () => {
@@ -130,7 +145,7 @@ function stopRafDrawing() {
   rafId = null;
 }
 
-// ===== Таймеры =====
+/* ====== ТАЙМЕРЫ ====== */
 function setResetTimer(ms) {
   clearResetTimer();
   resetTimerId = setTimeout(() => resetToIdle(), ms);
@@ -141,7 +156,7 @@ function clearResetTimer() {
   resetTimerId = null;
 }
 
-// ===== Экран ожидания + кнопка =====
+/* ====== ЭКРАНЫ ====== */
 function resetToIdle() {
   state = "idle";
   isDrawing = false;
@@ -156,33 +171,49 @@ function resetToIdle() {
 }
 
 function drawIdleScreen() {
-  background(...BG);
+  // фон
+  background(...THEME.bg);
 
+  // лёгкий декор (не мешает бренду)
+  drawDecor();
+  drawLogoTop();
+
+
+  
   const lines = [
     "Нарисуй идеальный блин 🥞",
     "Нажми «НАЧАТЬ»"
   ];
 
-  drawFittedTextBlock(lines, width / 2, height * 0.35, width * 0.88, height * 0.35);
+  // заголовок/подзаголовок — primary/hint
+  drawFittedTextBlock(lines, width / 2, height * 0.33, width * 0.88, height * 0.38);
 
+  // кнопка
   const base = min(width, height);
-  const btnW = clamp(base * 0.60, 220, 360);
-  const btnH = clamp(base * 0.13, 64, 92);
+  const btnW = clamp(base * 0.62, 220, 380);
+  const btnH = clamp(base * 0.13, 64, 96);
   const btnX = width / 2 - btnW / 2;
   const btnY = height * 0.55;
 
   startBtn = { x: btnX, y: btnY, w: btnW, h: btnH };
 
+  // тень
   noStroke();
-  fill(60);
+  fill(0, 0, 0, 30);
+  rect(btnX, btnY + 6, btnW, btnH, 18);
+
+  // кнопка — primary
+  fill(...THEME.primary);
   rect(btnX, btnY, btnW, btnH, 18);
 
-  fill(255);
+  // текст на кнопке — light
+  fill(...THEME.light);
   textAlign(CENTER, CENTER);
-  textSize(clamp(base * 0.07, 22, 34));
+  textSize(clamp(base * 0.07, 22, 36));
   text("НАЧАТЬ", width / 2, btnY + btnH / 2);
 
-  fill(80);
+  // подсказка — hint
+  fill(...THEME.hint);
   textSize(clamp(base * 0.04, 14, 22));
   text("После старта рисуй пальцем по экрану", width / 2, btnY + btnH + 40);
 
@@ -190,33 +221,53 @@ function drawIdleScreen() {
 }
 
 function beginSession() {
-  // после кнопки мы в “drawing”, показываем хедер и ждём касания, чтобы начать штрих
   state = "drawing";
   headerText = "Рисуй круг 🥞";
-  background(...BG);
+  background(...THEME.bg);
   redrawHeader();
 }
 
-// ===== Хедер =====
+/* ====== ДЕКОР ====== */
+function drawDecor() {
+  noStroke();
+
+  // мягкие круги-пятна (вторичный + блинный)
+  fill(...THEME.pancake, 80);
+  circle(width * 0.18, height * 0.18, min(width, height) * 0.50);
+
+  fill(...THEME.secondary, 55);
+  circle(width * 0.85, height * 0.78, min(width, height) * 0.55);
+
+  fill(...THEME.pancake, 45);
+  circle(width * 0.82, height * 0.22, min(width, height) * 0.25);
+}
+
+/* ====== ХЕДЕР ====== */
 function redrawHeader() {
   if (!headerText) return;
+
   const base = min(width, height);
   const h = clamp(base * 0.065, 18, 28);
 
-  // полупрозрачная плашка
+  // плашка (чтобы читаемо на любом фоне)
   noStroke();
-  fill(255, 255, 255, 170);
+  fill(...THEME.bg, 220);
   rect(0, 0, width, h * 2.2);
 
-  fill(70);
+  // тонкая линия (secondary)
+  fill(...THEME.secondary, 160);
+  rect(0, h * 2.2 - 2, width, 2);
+
+  // текст (hint)
+  fill(...THEME.hint);
   textAlign(CENTER, CENTER);
   textSize(h);
   text(headerText, width / 2, h * 1.1);
 }
 
-// ===== Рисование =====
+/* ====== РИСОВАНИЕ (блинно-жёлтая кисть) ====== */
 function startDrawing(x, y) {
-  // при первом касании начинаем рисование, хедер оставляем
+  // при первом касании начинаем
   isDrawing = true;
 
   points = [];
@@ -224,7 +275,7 @@ function startDrawing(x, y) {
   points.push(prevPoint);
 
   stampBrush(x, y);
-  redrawHeader(); // чтобы хедер не “съедался” кистью
+  redrawHeader();
 }
 
 function addPointAndDraw(x, y) {
@@ -240,13 +291,13 @@ function addPointAndDraw(x, y) {
     return;
   }
 
+  // чтобы RAF не плодил точки, когда палец почти стоит
   if (dist(prevPoint.x, prevPoint.y, curr.x, curr.y) < 0.6) return;
 
   stampSegment(prevPoint, curr);
   points.push(curr);
   prevPoint = curr;
 
-  // держим хедер всегда видимым
   redrawHeader();
 }
 
@@ -261,23 +312,31 @@ function stampSegment(a, b) {
 }
 
 function stampBrush(x, y) {
+  // блинная “краска”
   noStroke();
-  fill(80);
+  fill(...THEME.pancake);
   circle(x, y, STROKE_W);
+
+  // лёгкий “поджар” по краю (акцент) — очень тонко
+  noFill();
+  stroke(...THEME.error, 55);
+  strokeWeight(1.2);
+  circle(x, y, STROKE_W * 0.92);
+  noStroke();
 }
 
-// ===== Финиш =====
+/* ====== ФИНИШ ====== */
 function finishDrawing() {
   isDrawing = false;
 
   if (points.length < MIN_POINTS) {
-    showMessage(["Слишком мало движения 😄", "Нарисуй блин побольше"], MSG_MS);
+    showMessage(["Слишком мало движения 😄", "Нарисуй блин побольше"], MSG_MS, "error");
     return;
   }
 
   const len = pathLength(points);
   if (len < MIN_PATH_LEN) {
-    showMessage(["Слишком коротко 😈", "Сделай блин побольше"], MSG_MS);
+    showMessage(["Слишком коротко 😈", "Сделай блин побольше"], MSG_MS, "error");
     return;
   }
 
@@ -288,7 +347,7 @@ function finishDrawing() {
   if (gap <= AUTO_CLOSE_GAP) {
     autoClosePath(end, start);
   } else {
-    showMessage(["Блин не замкнулся 😅", "Доведи круг до конца"], MSG_MS);
+    showMessage(["Блин не замкнулся 😅", "Доведи круг до конца"], MSG_MS, "error");
     return;
   }
 
@@ -311,7 +370,7 @@ function autoClosePath(from, to) {
   prevPoint = { x: to.x, y: to.y };
 }
 
-// ===== Математика =====
+/* ====== МАТЕМАТИКА ====== */
 function calculateRoundness(pts) {
   let cx = 0, cy = 0;
   for (const p of pts) { cx += p.x; cy += p.y; }
@@ -335,43 +394,49 @@ function pathLength(pts) {
   return len;
 }
 
-// ===== UI =====
+/* ====== UI: РЕЗУЛЬТАТ / СООБЩЕНИЯ ====== */
 function showResult(value, ms) {
   state = "result";
   headerText = "";
 
-  background(...BG);
+  // сбросим таймер на всякий случай
+  clearResetTimer();
 
-  const base = min(width, height);
-  const big = clamp(base * 0.16, 40, 86);
-  const mid = clamp(base * 0.065, 16, 34);
+  const startTime = performance.now();
+  const startVal = 0;          // можно сделать value - 20, если хочешь “мягче”
+  const endVal = value;
 
-  noStroke();
-  fill(50);
-  textAlign(CENTER, CENTER);
+  const frame = (now) => {
+    const t = Math.min(1, (now - startTime) / COUNTUP_MS);
+    const eased = easeOutCubic(t);
+    const current = startVal + (endVal - startVal) * eased;
 
-  textSize(big);
-  text(`🥞 ${Math.round(value)}%`, width / 2, height * 0.45);
+    // перерисовываем кадр результата
+    drawResultScreen(current, endVal);
 
-  textSize(mid);
-  drawWrappedText(getComment(value), width / 2, height * 0.60, width * 0.86, mid * 1.25);
+    if (t < 1) {
+      requestAnimationFrame(frame);
+    } else {
+      // в конце фиксируем финальное значение и ставим авто-сброс
+      drawResultScreen(endVal, endVal);
+      setResetTimer(ms);
+    }
+  };
 
-  // Подсказка “тапни для сброса”
-  fill(90);
-  textSize(clamp(base * 0.04, 12, 20));
-  text("Тапни по экрану — новый блин", width / 2, height * 0.78);
-
-  setResetTimer(ms);
+  requestAnimationFrame(frame);
 }
 
-function showMessage(lines, ms) {
+function showMessage(lines, ms, kind = "info") {
   state = "message";
   headerText = "";
 
-  background(...BG);
-  drawFittedTextBlock(lines, width / 2, height / 2, width * 0.88, height * 0.75);
+  background(...THEME.bg);
 
-  fill(90);
+  // Текст ошибок — error, иначе primary
+  const color = (kind === "error") ? THEME.error : THEME.primary;
+  drawFittedTextBlock(lines, width / 2, height / 2, width * 0.88, height * 0.70, color);
+
+  fill(...THEME.hint);
   const base = min(width, height);
   textAlign(CENTER, CENTER);
   textSize(clamp(base * 0.04, 12, 20));
@@ -389,13 +454,13 @@ function getComment(v) {
   return "Это арт-объект, не блин 😈";
 }
 
-// ===== Текст: гарантированно влезает =====
-function drawFittedTextBlock(lines, cx, cy, maxW, maxH) {
-  let size = clamp(min(width, height) * 0.09, 18, 44);
+/* ====== ТЕКСТ: ВЛЕЗАЕТ ВСЕГДА ====== */
+// Если colorArr не передан — использует primary/hint по смыслу
+function drawFittedTextBlock(lines, cx, cy, maxW, maxH, colorArr = null) {
+  let size = clamp(min(width, height) * 0.09, 18, 46);
 
   textAlign(CENTER, CENTER);
   noStroke();
-  fill(80);
 
   for (let i = 0; i < 45; i++) {
     textSize(size);
@@ -405,9 +470,16 @@ function drawFittedTextBlock(lines, cx, cy, maxW, maxH) {
     const blockH = wrapped.length * lineH;
 
     if (blockH <= maxH) {
+      // первая строка — primary, остальные — hint (если colorArr не задан)
       let y = cy - blockH / 2 + lineH / 2;
-      for (const ln of wrapped) {
-        text(ln, cx, y);
+
+      for (let j = 0; j < wrapped.length; j++) {
+        if (colorArr) {
+          fill(...colorArr);
+        } else {
+          fill(...(j === 0 ? THEME.primary : THEME.hint));
+        }
+        text(wrapped[j], cx, y);
         y += lineH;
       }
       return;
@@ -445,10 +517,56 @@ function drawWrappedText(str, x, y, maxW, lineH) {
   }
 }
 
+/* ====== UTILS ====== */
 function clamp(v, a, b) {
   return Math.max(a, Math.min(b, v));
 }
 
 function pointInRect(px, py, r) {
   return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+}
+function drawResultScreen(displayValue, finalValue) {
+  background(...THEME.bg);
+
+  const base = min(width, height);
+  const big = clamp(base * 0.18, 44, 92);
+  const mid = clamp(base * 0.065, 16, 34);
+
+  textAlign(CENTER, CENTER);
+  noStroke();
+
+  // цвет процента — по финальному результату (чтобы не мигал)
+  const pctColor = finalValue >= 85 ? THEME.pancake : (finalValue < 45 ? THEME.error : THEME.primary);
+
+  fill(...pctColor);
+  textSize(big);
+  text(`🥞 ${Math.round(displayValue)}%`, width / 2, height * 0.43);
+
+  fill(...THEME.primary);
+  textSize(mid);
+  drawWrappedText(getComment(finalValue), width / 2, height * 0.58, width * 0.86, mid * 1.25);
+
+  fill(...THEME.hint);
+  textSize(clamp(base * 0.04, 12, 20));
+  text("Тапни по экрану — новый блин", width / 2, height * 0.78);
+}
+
+function easeOutCubic(t) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function drawLogoTop() {
+  if (!logoImg) return;
+
+  const padTop = Math.max(16, height * 0.03);
+  const maxW = width * 0.45;          // логотип не шире 45% экрана
+  const maxH = height * 0.12;         // и не выше 12% экрана
+
+  // масштаб с сохранением пропорций
+  const s = Math.min(maxW / logoImg.width, maxH / logoImg.height);
+  const w = logoImg.width * s;
+  const h = logoImg.height * s;
+
+  // по центру сверху
+  image(logoImg, (width - w) / 2, padTop, w, h);
 }
