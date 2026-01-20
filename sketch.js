@@ -32,7 +32,7 @@ let FILL_STEP = 1.7; // плотность штампов
 let points = [];
 let prevPoint = null;
 
-let logoImg;
+let logoImg = null;
 
 let cnv;
 let isDrawing = false;
@@ -66,6 +66,11 @@ function setup() {
   window.addEventListener("pointerup", onPointerUp, { passive: false });
 
   resetToIdle();
+  loadImage(
+  "assets/logo.png",
+  (img) => { logoImg = img; },   // успех
+  () => { logoImg = null; }      // ошибка — не блокируем запуск
+);
 }
 
 function windowResized() {
