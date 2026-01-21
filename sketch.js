@@ -567,8 +567,8 @@ function drawLogoTop() {
   if (!logoImg) return;
 
   const padTop = Math.max(12, height * 0.025);
-  const maxW = width * 0.46;
-  const maxH = height * 0.12;
+  const maxW = width * 0.32;
+  const maxH = height * 0.084;
 
   const s = Math.min(maxW / logoImg.width, maxH / logoImg.height);
   const w = logoImg.width * s;
