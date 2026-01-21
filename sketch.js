@@ -63,15 +63,18 @@ function setup() {
   window.addEventListener("pointerup", onPointerUp, { passive: false });
 
   resetToIdle();
-  loadImage(
+ loadImage(
   "assets/logo.png",
   (img) => {
     logoImg = img;
-    // ✅ если мы на стартовом экране — перерисуем его, чтобы лого появилось
-    if (state === "idle" || state === "ready") drawIdleScreen();
+
+    // ВАЖНО: drawIdleScreen() внутри ставит state="ready".
+    // Поэтому перерисовываем старт ТОЛЬКО если мы сейчас на старте.
+    if (state === "idle" || state === "ready") {
+      drawIdleScreen();
+    }
   },
   () => { logoImg = null; }
-);
 );
 }
 
