@@ -65,8 +65,13 @@ function setup() {
   resetToIdle();
   loadImage(
   "assets/logo.png",
-  (img) => { logoImg = img; },   // успех
-  () => { logoImg = null; }      // ошибка — не блокируем запуск
+  (img) => {
+    logoImg = img;
+    // ✅ если мы на стартовом экране — перерисуем его, чтобы лого появилось
+    if (state === "idle" || state === "ready") drawIdleScreen();
+  },
+  () => { logoImg = null; }
+);
 );
 }
 
@@ -179,8 +184,6 @@ function drawIdleScreen() {
   // лёгкий декор (не мешает бренду)
   drawDecor();
   drawLogoTop();
-
-
   
   const lines = [
     "Нарисуй идеальный блин 🥞",
@@ -560,15 +563,13 @@ function easeOutCubic(t) {
 function drawLogoTop() {
   if (!logoImg) return;
 
-  const padTop = Math.max(16, height * 0.03);
-  const maxW = width * 0.45;          // логотип не шире 45% экрана
-  const maxH = height * 0.12;         // и не выше 12% экрана
+  const padTop = Math.max(12, height * 0.025);
+  const maxW = width * 0.46;
+  const maxH = height * 0.12;
 
-  // масштаб с сохранением пропорций
   const s = Math.min(maxW / logoImg.width, maxH / logoImg.height);
   const w = logoImg.width * s;
   const h = logoImg.height * s;
 
-  // по центру сверху
   image(logoImg, (width - w) / 2, padTop, w, h);
 }
