@@ -499,30 +499,57 @@ function showResult(value, ms) {
 function drawResultScreen(displayValue, finalValue) {
   background(...THEME.bg);
 
-  // показываем "блин по контуру"
+  const base = min(width, height);
+
+  // Размеры типографики
+  const pctSize = clamp(base * 0.14, 40, 86);
+  const commentSize = clamp(base * 0.055, 16, 34);
+
+  // Вертикальная сетка
+  const topY = height * 0.12;        // % (верх)
+  const blinCenterY = height * 0.52; // блин (центр)
+  const commentY = height * 0.86;    // комментарий (низ)
+
+  // 1) Процент
+  const pctColor = finalValue >= 85 ? THEME.pancake : (finalValue < 45 ? THEME.error : THEME.primary);
+  noStroke();
+  fill(...pctColor);
+  textAlign(CENTER, CENTER);
+  textSize(pctSize);
+  text(`🥞 ${Math.round(displayValue)}%`, width / 2, topY);
+
+  // 2) Блин (вписываем в окно, без растяжения на весь экран)
   if (blinMaskedImg) {
-    image(blinMaskedImg, 0, 0, width, height);
+    // "окно" для блина: шире, чем выше
+    const maxW = width * 0.78;
+    const maxH = height * 0.50;
+
+    // сохраняем пропорции исходной картинки (она full-screen по размеру canvas)
+    const s = Math.min(maxW / blinMaskedImg.width, maxH / blinMaskedImg.height);
+    const w = blinMaskedImg.width * s;
+    const h = blinMaskedImg.height * s;
+
+    const x = (width - w) / 2;
+    const y = blinCenterY - h / 2;
+
+    // легкая тень под блином, чтобы “вылез” с фона (очень тонко)
+    noStroke();
+    fill(0, 0, 0, 18);
+    ellipse(width / 2, y + h * 0.92, w * 0.65, h * 0.10);
+
+    image(blinMaskedImg, x, y, w, h);
   }
 
-  const base = min(width, height);
-  const big = clamp(base * 0.18, 44, 92);
-  const mid = clamp(base * 0.065, 16, 34);
-
-  textAlign(CENTER, CENTER);
-  noStroke();
-
-  const pctColor = finalValue >= 85 ? THEME.pancake : (finalValue < 45 ? THEME.error : THEME.primary);
-  fill(...pctColor);
-  textSize(big);
-  text(`🥞 ${Math.round(displayValue)}%`, width / 2, height * 0.14);
-
+  // 3) Комментарий снизу
   fill(...THEME.primary);
-  textSize(mid);
-  drawWrappedText(getComment(finalValue), width / 2, height * 0.24, width * 0.86, mid * 1.2);
+  textSize(commentSize);
+  drawWrappedText(getComment(finalValue), width / 2, commentY, width * 0.86, commentSize * 1.25);
 
+  // Подсказка на сброс (совсем мелко)
   fill(...THEME.hint);
-  textSize(clamp(base * 0.04, 12, 20));
-  text("Тапни по экрану — новый блин", width / 2, height * 0.92);
+  textSize(clamp(base * 0.035, 12, 18));
+  textAlign(CENTER, CENTER);
+  text("Тапни по экрану — новый блин", width / 2, height * 0.95);
 }
 
 function easeOutCubic(t) {
