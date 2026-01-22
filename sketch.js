@@ -32,6 +32,8 @@ let FILL_STEP = 1.7; // плотность штампов
 let points = [];
 let prevPoint = null;
 
+let blinMaskedImg = null;
+
 let logoImg = null;
 
 let cnv;
@@ -359,6 +361,7 @@ function finishDrawing() {
     showMessage(["Блин не замкнулся 😅", "Доведи круг до конца"], MSG_MS, "error");
     return;
   }
+  blinMaskedImg = buildMaskedBlin(points);
 
   const roundness = calculateRoundness(points);
   showResult(roundness, RESULT_MS);
@@ -536,6 +539,9 @@ function pointInRect(px, py, r) {
 }
 function drawResultScreen(displayValue, finalValue) {
   background(...THEME.bg);
+  if (blinMaskedImg) {
+  image(blinMaskedImg, 0, 0, width, height);
+}
 
   const base = min(width, height);
   const big = clamp(base * 0.18, 44, 92);
@@ -581,4 +587,56 @@ function drawLogoTop() {
   drawingContext.imageSmoothingQuality = "high";
 
   image(logoImg, (width - w) / 2, padTop, w, h);
+}
+function buildMaskedBlin(pts) {
+  // 1) Текстура блина (offscreen)
+  const tex = createGraphics(width, height);
+  tex.clear();
+
+  // базовый цвет "блина"
+  tex.noStroke();
+  tex.fill(...THEME.pancake);
+  tex.rect(0, 0, width, height);
+
+  // лёгкая "поджарка" (пятна/крап)
+  // (дёшево по CPU и выглядит вкусно)
+  tex.noStroke();
+  for (let i = 0; i < 900; i++) {
+    const x = Math.random() * width;
+    const y = Math.random() * height;
+    const s = 2 + Math.random() * 6;
+    tex.fill(THEME.error[0], THEME.error[1], THEME.error[2], 18); // полупрозрачный
+    tex.circle(x, y, s);
+  }
+
+  // небольшой градиент "объёма" (центр светлее)
+  // делаем мягко, чтобы не было каши
+  tex.noFill();
+  tex.stroke(255, 255, 255, 18);
+  tex.strokeWeight(1);
+  for (let r = 0; r < 90; r++) {
+    const k = r / 90;
+    tex.ellipse(width * 0.5, height * 0.55, width * (0.25 + k * 0.9), height * (0.12 + k * 0.55));
+  }
+
+  // 2) Маска по контуру (offscreen)
+  const maskG = createGraphics(width, height);
+  maskG.background(0);
+  maskG.noStroke();
+  maskG.fill(255);
+
+  // Чтобы не рисовать 5000 вершин — прорежаем точки
+  const step = 3; // можно 2..6
+  maskG.beginShape();
+  for (let i = 0; i < pts.length; i += step) {
+    maskG.vertex(pts[i].x, pts[i].y);
+  }
+  maskG.endShape(CLOSE);
+
+  // 3) Применяем маску
+  const texImg = tex.get();
+  const maskImg = maskG.get();
+  texImg.mask(maskImg);
+
+  return texImg;
 }
