@@ -53,7 +53,8 @@ const MSG_MS = 3000;
 
 function setup() {
   cnv = createCanvas(windowWidth, windowHeight);
-  pixelDensity(1);
+  pixelDensity(Math.min(2, window.devicePixelRatio || 1));
+  smooth();
 
   const el = cnv.elt;
   el.style.touchAction = "none";
@@ -567,15 +568,17 @@ function drawLogoTop() {
   if (!logoImg) return;
 
   const padTop = Math.max(12, height * 0.025);
+
+  // ~ на 30% меньше
   const maxW = width * 0.32;
-  const maxH = height * 0.084;
+  const maxH = height * 0.085;
 
   const s = Math.min(maxW / logoImg.width, maxH / logoImg.height);
   const w = logoImg.width * s;
   const h = logoImg.height * s;
-  // лучшее сглаживание для логотипа
+
   drawingContext.imageSmoothingEnabled = true;
   drawingContext.imageSmoothingQuality = "high";
-  
+
   image(logoImg, (width - w) / 2, padTop, w, h);
 }
