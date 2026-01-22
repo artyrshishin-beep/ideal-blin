@@ -501,14 +501,14 @@ function drawResultScreen(displayValue, finalValue) {
 
   const base = min(width, height);
 
-  // Размеры типографики
-  const pctSize = clamp(base * 0.14, 40, 86);
-  const commentSize = clamp(base * 0.055, 16, 34);
+  // Типографика
+  const pctSize = clamp(base * 0.13, 38, 84);
+  const commentSize = clamp(base * 0.055, 16, 32);
 
-  // Вертикальная сетка
-  const topY = height * 0.12;        // % (верх)
-  const blinCenterY = height * 0.52; // блин (центр)
-  const commentY = height * 0.86;    // комментарий (низ)
+  // Более “сбитая” вертикальная сетка
+  const pctY = height * 0.18;
+  const blinCenterY = height * 0.54;
+  const commentY = height * 0.78;
 
   // 1) Процент
   const pctColor = finalValue >= 85 ? THEME.pancake : (finalValue < 45 ? THEME.error : THEME.primary);
@@ -516,40 +516,45 @@ function drawResultScreen(displayValue, finalValue) {
   fill(...pctColor);
   textAlign(CENTER, CENTER);
   textSize(pctSize);
-  text(`🥞 ${Math.round(displayValue)}%`, width / 2, topY);
+  text(`🥞 ${Math.round(displayValue)}%`, width / 2, pctY);
 
-  // 2) Блин (вписываем в окно, без растяжения на весь экран)
+  // 2) Блин (крупнее + по центру по bounding box)
   if (blinMaskedImg) {
-    // "окно" для блина: шире, чем выше
-    const maxW = width * 0.78;
-    const maxH = height * 0.50;
+    const bb = getBlinBounds(blinMaskedImg);
+    if (bb) {
+      // окно под блин — крупное
+      const maxW = width * 0.88;
+      const maxH = height * 0.55;
 
-    // сохраняем пропорции исходной картинки (она full-screen по размеру canvas)
-    const s = Math.min(maxW / blinMaskedImg.width, maxH / blinMaskedImg.height);
-    const w = blinMaskedImg.width * s;
-    const h = blinMaskedImg.height * s;
+      const s = Math.min(maxW / bb.w, maxH / bb.h);
 
-    const x = (width - w) / 2;
-    const y = blinCenterY - h / 2;
+      const dw = bb.w * s;
+      const dh = bb.h * s;
 
-    // легкая тень под блином, чтобы “вылез” с фона (очень тонко)
-    noStroke();
-    fill(0, 0, 0, 18);
-    ellipse(width / 2, y + h * 0.92, w * 0.65, h * 0.10);
+      // хотим, чтобы центр блина совпал с центром экрана по X и blinCenterY по Y
+      const dx = width / 2 - (bb.cx * s);
+      const dy = blinCenterY - (bb.cy * s);
 
-    image(blinMaskedImg, x, y, w, h);
+      // тень прямо под блином
+      noStroke();
+      fill(0, 0, 0, 16);
+      ellipse(width / 2, dy + (bb.y + bb.h) * s + 10, dw * 0.55, dh * 0.08);
+
+      // рисуем картинку со сдвигом
+      image(blinMaskedImg, dx, dy, blinMaskedImg.width * s, blinMaskedImg.height * s);
+    }
   }
 
-  // 3) Комментарий снизу
+  // 3) Комментарий
   fill(...THEME.primary);
   textSize(commentSize);
   drawWrappedText(getComment(finalValue), width / 2, commentY, width * 0.86, commentSize * 1.25);
 
-  // Подсказка на сброс (совсем мелко)
+  // подсказка
   fill(...THEME.hint);
   textSize(clamp(base * 0.035, 12, 18));
   textAlign(CENTER, CENTER);
-  text("Тапни по экрану — новый блин", width / 2, height * 0.95);
+  text("Тапни по экрану — новый блин", width / 2, height * 0.92);
 }
 
 function easeOutCubic(t) {
@@ -647,6 +652,45 @@ function drawWrappedText(str, x, y, maxW, lineH) {
 // ---------- UTILS ----------
 function clamp(v, a, b) {
   return Math.max(a, Math.min(b, v));
+}
+
+function getBlinBounds(img) {
+  img.loadPixels();
+  const w = img.width;
+  const h = img.height;
+  const px = img.pixels;
+
+  let minX = w, minY = h, maxX = -1, maxY = -1;
+
+  // Прорежаем, чтобы не тормозило: шаг 4..8 обычно ок
+  const step = 6;
+
+  for (let y = 0; y < h; y += step) {
+    for (let x = 0; x < w; x += step) {
+      const i = 4 * (y * w + x);
+      const a = px[i + 3]; // alpha
+      if (a > 10) {
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  if (maxX < 0) return null;
+
+  const bw = maxX - minX + 1;
+  const bh = maxY - minY + 1;
+
+  return {
+    x: minX,
+    y: minY,
+    w: bw,
+    h: bh,
+    cx: minX + bw / 2,
+    cy: minY + bh / 2
+  };
 }
 
 function pointInRect(px, py, r) {
