@@ -22,7 +22,7 @@ const AUTO_CLOSE_GAP = 160;   // насколько можно "не дотян�
 const AUTO_CLOSE_STEP = 6;    // шаг автозамыкания
 
 // Ты уже ставил 180 — оставляю как текущее
-const CALIBRATION_K = 220;
+const CALIBRATION_K = 225;
 
 /* ====== НАСТРОЙКИ КИСТИ ====== */
 let STROKE_W = 20;   // толщина блина
@@ -573,6 +573,9 @@ function drawLogoTop() {
   const s = Math.min(maxW / logoImg.width, maxH / logoImg.height);
   const w = logoImg.width * s;
   const h = logoImg.height * s;
-
+  // лучшее сглаживание для логотипа
+  drawingContext.imageSmoothingEnabled = true;
+  drawingContext.imageSmoothingQuality = "high";
+  
   image(logoImg, (width - w) / 2, padTop, w, h);
 }
