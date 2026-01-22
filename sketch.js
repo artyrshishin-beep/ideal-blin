@@ -591,6 +591,13 @@ function drawLogoTop() {
 function buildMaskedBlin(pts) {
   // 1) Текстура блина (offscreen)
   const tex = createGraphics(width, height);
+  const d = pixelDensity();              // ✅ берём плотность основного canvas
+
+  const tex = createGraphics(width, height);
+  tex.pixelDensity(d);                   // ✅ синхронизируем
+
+  const maskG = createGraphics(width, height);
+  maskG.pixelDensity(d);                 // ✅ синхронизируем
   tex.clear();
 
   // базовый цвет "блина"
@@ -621,12 +628,12 @@ function buildMaskedBlin(pts) {
 
   // 2) Маска по контуру (offscreen)
   const maskG = createGraphics(width, height);
-  maskG.background(0);
+  maskG.clear();          // прозрачный фон
   maskG.noStroke();
-  maskG.fill(255);
+  maskG.fill(255);        // белое = видно
 
   // Чтобы не рисовать 5000 вершин — прорежаем точки
-  const step = 3; // можно 2..6
+    const step = 3;
   maskG.beginShape();
   for (let i = 0; i < pts.length; i += step) {
     maskG.vertex(pts[i].x, pts[i].y);
@@ -636,6 +643,9 @@ function buildMaskedBlin(pts) {
   // 3) Применяем маску
   const texImg = tex.get();
   const maskImg = maskG.get();
+
+  texImg.loadPixels();
+  maskImg.loadPixels();
   texImg.mask(maskImg);
 
   return texImg;
