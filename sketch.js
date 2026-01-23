@@ -46,8 +46,10 @@ let startBtn = null;
 let headerText = "";
 
 let logoImg = null;
-let blinFillImg = null;     // обрезанный блин (заливка)
-let blinOutlineImg = null;  // обрезанный контур
+
+let blinMaskedImg = null;
+let lastBlinBounds = null;
+let lastPts = null;
 
 // ---------- SETUP ----------
 function setup() {
@@ -367,8 +369,9 @@ function finishDrawing() {
 
   // строим "блин по контуру"
   const blin = buildMaskedBlin(points);
-  blinFillImg = blin.fill;
-  blinOutlineImg = blin.outline;
+  blinMaskedImg = buildMaskedBlin(points);
+  lastBlinBounds = getAlphaBounds(blinMaskedImg); // границы блина по маске
+  lastPts = points.slice();                       // для контура
 
   // считаем %
   const roundness = calculateRoundness(points);
@@ -396,21 +399,23 @@ function autoClosePath(from, to) {
 function buildMaskedBlin(pts) {
   const d = pixelDensity();
 
-  // 1) Текстура
   const tex = createGraphics(width, height);
   tex.pixelDensity(d);
   tex.clear();
+
   tex.noStroke();
   tex.fill(...THEME.pancake);
   tex.rect(0, 0, width, height);
 
-  // крап "поджарки"
+  // текстура сильнее (чтобы было видно)
   tex.noStroke();
-  for (let i = 0; i < 900; i++) {
+  for (let i = 0; i < 1600; i++) {
     const x = Math.random() * width;
     const y = Math.random() * height;
-    const s = 2 + Math.random() * 6;
-    tex.fill(THEME.error[0], THEME.error[1], THEME.error[2], 18);
+    const s = 2 + Math.random() * 7;
+
+    // тёплый коричневый/поджар (не красный), чтобы выглядело “блинно”
+    tex.fill(120, 84, 52, 26);
     tex.circle(x, y, s);
   }
 
@@ -423,7 +428,7 @@ function buildMaskedBlin(pts) {
     tex.ellipse(width * 0.5, height * 0.58, width * (0.20 + k * 0.85), height * (0.10 + k * 0.50));
   }
 
-  // 2) Маска (залитая фигура)
+  // маска
   const maskG = createGraphics(width, height);
   maskG.pixelDensity(d);
   maskG.clear();
@@ -439,40 +444,12 @@ function buildMaskedBlin(pts) {
 
   const texImg = tex.get();
   const maskImg = maskG.get();
+
   texImg.loadPixels();
   maskImg.loadPixels();
   texImg.mask(maskImg);
 
-  // 3) Находим границы блина (по альфе)
-  const bb = getAlphaBounds(texImg);
-  if (!bb) {
-    return { fill: texImg, outline: null };
-  }
-
-  // 4) Обрезаем (crop) заливку
-  const fillCrop = texImg.get(bb.x, bb.y, bb.w, bb.h);
-
-  // 5) Рисуем контур (коричневый) и тоже crop
-  const outlineG = createGraphics(width, height);
-  outlineG.pixelDensity(d);
-  outlineG.clear();
-  outlineG.noFill();
-
-  // "лёгкий коричневый" контур (можно подправить)
-  outlineG.stroke(120, 84, 52, 200);
-  outlineG.strokeWeight(6);
-  outlineG.strokeJoin(ROUND);
-  outlineG.strokeCap(ROUND);
-
-  outlineG.beginShape();
-  for (let i = 0; i < pts.length; i += 2) {
-    outlineG.vertex(pts[i].x, pts[i].y);
-  }
-  outlineG.endShape(CLOSE);
-
-  const outlineImg = outlineG.get(bb.x, bb.y, bb.w, bb.h);
-
-  return { fill: fillCrop, outline: outlineImg };
+  return texImg;
 }
 
 // ---------- МАТЕМАТИКА ----------
@@ -534,10 +511,9 @@ function drawResultScreen(displayValue, finalValue) {
   const pctSize = clamp(base * 0.13, 38, 84);
   const commentSize = clamp(base * 0.055, 16, 32);
 
-  // Позиции (сдвинул вниз/вверх как ты просил)
-  const pctY = height * 0.24;       // процент НИЖЕ
-  const blinCenterY = height * 0.52; // блин по центру
-  const commentY = height * 0.74;   // комментарий ВЫШЕ
+  const pctY = height * 0.24;
+  const blinCenterY = height * 0.52;
+  const commentY = height * 0.74;
 
   // 1) Процент
   const pctColor = finalValue >= 85 ? THEME.pancake : (finalValue < 45 ? THEME.error : THEME.primary);
@@ -547,20 +523,48 @@ function drawResultScreen(displayValue, finalValue) {
   textSize(pctSize);
   text(`🥞 ${Math.round(displayValue)}%`, width / 2, pctY);
 
-  // 2) Блин (крупный и по центру)
-  if (blinFillImg) {
-    const maxW = width * 0.86;
-    const maxH = height * 0.44;
+  // 2) Блин (рисуем только bounding box из full-screen картинки)
+  if (blinMaskedImg && lastBlinBounds) {
+    const bb = lastBlinBounds;
 
-    const s = Math.min(maxW / blinFillImg.width, maxH / blinFillImg.height);
-    const w = blinFillImg.width * s;
-    const h = blinFillImg.height * s;
+    const maxW = width * 0.88;
+    const maxH = height * 0.48;
+    const s = Math.min(maxW / bb.w, maxH / bb.h);
 
-    const x = (width - w) / 2;
-    const y = blinCenterY - h / 2;
+    const dw = bb.w * s;
+    const dh = bb.h * s;
 
-    image(blinFillImg, x, y, w, h);
-    if (blinOutlineImg) image(blinOutlineImg, x, y, w, h);
+    const dx = width / 2 - dw / 2;
+    const dy = blinCenterY - dh / 2;
+
+    // Рисуем с source-rect (9 аргументов)
+    image(blinMaskedImg, dx, dy, dw, dh, bb.x, bb.y, bb.w, bb.h);
+
+    // 2b) Контур поверх (тонкий коричневый)
+    if (lastPts) {
+      const pb = getPointsBounds(lastPts);
+
+      // тот же scale, но для точек
+      const sx = dw / pb.w;
+      const sy = dh / pb.h;
+
+      // центрируем точки в то же окно
+      const ox = dx - pb.minX * sx;
+      const oy = dy - pb.minY * sy;
+
+      noFill();
+      stroke(120, 84, 52, 180); // коричневый
+      strokeWeight(clamp(base * 0.006, 2, 4)); // тоньше!
+      strokeJoin(ROUND);
+      strokeCap(ROUND);
+
+      beginShape();
+      for (let i = 0; i < lastPts.length; i += 2) {
+        vertex(ox + lastPts[i].x * sx, oy + lastPts[i].y * sy);
+      }
+      endShape(CLOSE);
+      noStroke();
+    }
   }
 
   // 3) Комментарий
@@ -568,17 +572,7 @@ function drawResultScreen(displayValue, finalValue) {
   textSize(commentSize);
   drawWrappedText(getComment(finalValue), width / 2, commentY, width * 0.86, commentSize * 1.25);
 
-  // подсказка
-  fill(...THEME.hint);
-  textSize(clamp(base * 0.035, 12, 18));
-  text("Тапни по экрану — новый блин", width / 2, height * 0.92);
-
-  // 3) Комментарий
-  fill(...THEME.primary);
-  textSize(commentSize);
-  drawWrappedText(getComment(finalValue), width / 2, commentY, width * 0.86, commentSize * 1.25);
-
-  // подсказка
+  // Подсказка (одна!)
   fill(...THEME.hint);
   textSize(clamp(base * 0.035, 12, 18));
   textAlign(CENTER, CENTER);
@@ -748,4 +742,14 @@ function getAlphaBounds(img) {
   if (maxX < 0) return null;
 
   return { x: minX, y: minY, w: (maxX - minX + 1), h: (maxY - minY + 1) };
+}
+function getPointsBounds(pts) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY };
 }
