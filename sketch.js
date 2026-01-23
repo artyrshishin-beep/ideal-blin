@@ -525,13 +525,17 @@ function drawResultScreen(displayValue, finalValue) {
   background(...THEME.bg);
 
   const base = min(width, height);
+
   const pctSize = clamp(base * 0.13, 38, 84);
   const commentSize = clamp(base * 0.055, 16, 32);
 
-  // Компоновка: % -> блин -> комментарий
+  // Позиции текста
   const pctY = height * 0.24;
-  const blinCenterY = height * 0.52;
-  const commentY = height * 0.74;
+  const commentY = height * 0.78;
+
+  // Отступы, чтобы блин был строго "между"
+  const gapTop = Math.max(18, commentSize * 1.4);     // от % до блина
+  const gapBottom = Math.max(18, commentSize * 1.4);  // от блина до комментария
 
   // 1) Процент
   const pctColor = finalValue >= 85 ? THEME.pancake : (finalValue < 45 ? THEME.error : THEME.primary);
@@ -541,39 +545,29 @@ function drawResultScreen(displayValue, finalValue) {
   textSize(pctSize);
   text(`🥞 ${Math.round(displayValue)}%`, width / 2, pctY);
 
-  // 2) Блин (вписываем bounds в окно, контур рисуем в тех же координатах)
+  // 2) Блин — строго между процентом и комментарием
   if (blinMaskedImg && lastBlinBounds) {
     const bb = lastBlinBounds;
 
-    const maxW = width * 0.88;
-    const maxH = height * 0.42; // чтобы не лез на комментарий
-    const s = Math.min(maxW / bb.w, maxH / bb.h);
+    // вертикальное окно под блин
+    const topLimit = pctY + pctSize / 2 + gapTop;
+    const bottomLimit = commentY - commentSize / 2 - gapBottom;
+    const availableH = Math.max(60, bottomLimit - topLimit);
+
+    // горизонтальное окно
+    const availableW = width * 0.88;
+
+    // масштаб под окно
+    const s = Math.min(availableW / bb.w, availableH / bb.h);
 
     const dw = bb.w * s;
     const dh = bb.h * s;
 
     const dx = width / 2 - dw / 2;
-    const dy = blinCenterY - dh / 2;
+    const dy = topLimit + (availableH - dh) / 2;
 
-    // заливаем текстуру блина
+    // рисуем только область блина (source rect)
     image(blinMaskedImg, dx, dy, dw, dh, bb.x, bb.y, bb.w, bb.h);
-
-    // контур сверху — тонкий коричневый
-    if (lastPts && lastPts.length > 10) {
-      noFill();
-      stroke(120, 84, 52, 170);
-      strokeWeight(clamp(base * 0.0045, 1.5, 3));
-      strokeJoin(ROUND);
-      strokeCap(ROUND);
-
-      beginShape();
-      for (let i = 0; i < lastPts.length; i += 2) {
-        const p = lastPts[i];
-        vertex(dx + (p.x - bb.x) * s, dy + (p.y - bb.y) * s);
-      }
-      endShape(CLOSE);
-      noStroke();
-    }
   }
 
   // 3) Комментарий
@@ -581,7 +575,7 @@ function drawResultScreen(displayValue, finalValue) {
   textSize(commentSize);
   drawWrappedText(getComment(finalValue), width / 2, commentY, width * 0.86, commentSize * 1.25);
 
-  // Подсказка (одна!)
+  // Подсказка (одна)
   fill(...THEME.hint);
   textSize(clamp(base * 0.035, 12, 18));
   textAlign(CENTER, CENTER);
