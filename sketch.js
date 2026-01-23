@@ -1,4 +1,4 @@
-// ===== Идеальный блин — full (brandbook + logo + countup + masked blin) =====
+// ===== Идеальный блин — full актуальная версия (брендбук + лого + набегание + блин по контуру) =====
 
 // ---------- БРЕНДБУК ----------
 const THEME = {
@@ -11,17 +11,18 @@ const THEME = {
   light: [255, 255, 255],     // белый
 };
 
-// Алиас на случай старых background(...BG)
+// алиас на всякий случай
 const BG = THEME.bg;
 
 // ---------- НАСТРОЙКИ ----------
 const MIN_POINTS = 80;
 const MIN_PATH_LEN = 500;
 
-const AUTO_CLOSE_GAP = 160;     // допустимый "недоход" конца к началу
+const AUTO_CLOSE_GAP = 160;
 const AUTO_CLOSE_STEP = 6;
 
-const CALIBRATION_K = 225;      // <- твоя текущая калибровка
+const CALIBRATION_K = 225;     // твоя текущая калибровка
+
 const RESULT_MS = 4500;
 const MSG_MS = 3000;
 const COUNTUP_MS = 850;
@@ -47,6 +48,7 @@ let headerText = "";
 
 let logoImg = null;
 
+// Блин по контуру (full-screen картинка) + bounds по альфе + исходные точки
 let blinMaskedImg = null;
 let lastBlinBounds = null;
 let lastPts = null;
@@ -55,7 +57,7 @@ let lastPts = null;
 function setup() {
   cnv = createCanvas(windowWidth, windowHeight);
 
-  // Чёткость (важно для лого/текста)
+  // Чёткость
   pixelDensity(Math.min(2, window.devicePixelRatio || 1));
   smooth();
 
@@ -66,20 +68,17 @@ function setup() {
   el.addEventListener("pointermove", onPointerMove, { passive: false });
   window.addEventListener("pointerup", onPointerUp, { passive: false });
 
-  // Лого грузим без блокировки (никакого preload)
+  // Лого грузим без блокировки
   loadImage(
     "assets/logo.png",
     (img) => {
       logoImg = img;
-      // если сейчас на стартовом экране — перерисуем, чтобы логотип появился сразу
       if (state === "idle" || state === "ready") drawIdleScreen();
     },
     () => { logoImg = null; }
   );
 
   resetToIdle();
-  blinFillImg = null;
-  blinOutlineImg = null;
 }
 
 function windowResized() {
@@ -88,13 +87,6 @@ function windowResized() {
     drawIdleScreen();
   } else if (state === "drawing") {
     redrawHeader();
-  } else if (state === "result") {
-    // перерисуем результатный экран (хотя бы фон+блин)
-    // текст “набегания” не продолжаем при ресайзе — не страшно
-    if (blinMaskedImg) {
-      background(...THEME.bg);
-      image(blinMaskedImg, 0, 0, width, height);
-    }
   }
 }
 
@@ -102,25 +94,21 @@ function windowResized() {
 function onPointerDown(e) {
   e.preventDefault();
 
-  // Стартовый экран: кликаем только по кнопке
   if (state === "idle" || state === "ready") {
     const p = getCanvasPoint(e);
     if (startBtn && pointInRect(p.x, p.y, startBtn)) beginSession();
     return;
   }
 
-  // На результате/сообщении: тап = сброс
   if (state === "result" || state === "message") {
     resetToIdle();
     return;
   }
 
-  // Рисование
   if (state === "drawing") {
     clearResetTimer();
     const p = getCanvasPoint(e);
     lastPointer = p;
-
     startDrawing(p.x, p.y);
     startRafDrawing();
   }
@@ -129,7 +117,6 @@ function onPointerDown(e) {
 function onPointerMove(e) {
   if (!isDrawing) return;
   e.preventDefault();
-
   const p = getCanvasPoint(e);
   lastPointer = p;
   addPointAndDraw(p.x, p.y);
@@ -138,7 +125,6 @@ function onPointerMove(e) {
 function onPointerUp(e) {
   if (!isDrawing) return;
   e.preventDefault();
-
   stopRafDrawing();
   finishDrawing();
 }
@@ -182,7 +168,10 @@ function resetToIdle() {
   points = [];
   prevPoint = null;
   headerText = "";
+
   blinMaskedImg = null;
+  lastBlinBounds = null;
+  lastPts = null;
 
   stopRafDrawing();
   clearResetTimer();
@@ -249,9 +238,7 @@ function drawLogoTop() {
   if (!logoImg) return;
 
   const padTop = Math.max(12, height * 0.02);
-
-  // меньше примерно на 30%
-  const maxW = width * 0.32;
+  const maxW = width * 0.32;      // меньше примерно на 30%
   const maxH = height * 0.085;
 
   const s = Math.min(maxW / logoImg.width, maxH / logoImg.height);
@@ -284,7 +271,7 @@ function redrawHeader() {
   text(headerText, width / 2, h * 1.1);
 }
 
-// ---------- РИСОВАНИЕ (контур) ----------
+// ---------- РИСОВАНИЕ ----------
 function startDrawing(x, y) {
   isDrawing = true;
   points = [];
@@ -333,9 +320,9 @@ function stampBrush(x, y) {
   fill(...THEME.pancake);
   circle(x, y, STROKE_W);
 
-  // легкий "поджар" по краю
+  // легкий "поджар" по краю (очень тонко)
   noFill();
-  stroke(THEME.error[0], THEME.error[1], THEME.error[2], 50);
+  stroke(120, 84, 52, 70);
   strokeWeight(1.2);
   circle(x, y, STROKE_W * 0.92);
   noStroke();
@@ -367,16 +354,12 @@ function finishDrawing() {
     return;
   }
 
-  // строим "блин по контуру"
-  const blin = buildMaskedBlin(points);
+  // блин по контуру
   blinMaskedImg = buildMaskedBlin(points);
-  lastBlinBounds = getAlphaBounds(blinMaskedImg); // границы блина по маске
-  lastPts = points.slice();                       // для контура
+  lastBlinBounds = getAlphaBounds(blinMaskedImg);
+  lastPts = points.slice();
 
-  // считаем %
   const roundness = calculateRoundness(points);
-
-  // показываем с набеганием
   showResult(roundness, RESULT_MS);
 }
 
@@ -399,6 +382,7 @@ function autoClosePath(from, to) {
 function buildMaskedBlin(pts) {
   const d = pixelDensity();
 
+  // текстура
   const tex = createGraphics(width, height);
   tex.pixelDensity(d);
   tex.clear();
@@ -407,34 +391,31 @@ function buildMaskedBlin(pts) {
   tex.fill(...THEME.pancake);
   tex.rect(0, 0, width, height);
 
-  // текстура: мелкие точки + крупные пятна (видно всегда)
-tex.noStroke();
+  // заметная текстура (крапинка + пятна)
+  tex.noStroke();
 
-// мелкая "крапинка"
-for (let i = 0; i < 2600; i++) {
-  const x = Math.random() * width;
-  const y = Math.random() * height;
-  const s = 1 + Math.random() * 5;
-  tex.fill(120, 84, 52, 42);  // коричневый, заметнее
-  tex.circle(x, y, s);
-}
+  for (let i = 0; i < 2600; i++) {
+    const x = Math.random() * width;
+    const y = Math.random() * height;
+    const s = 1 + Math.random() * 5;
+    tex.fill(120, 84, 52, 42);
+    tex.circle(x, y, s);
+  }
 
-// крупные "поджаренные" пятна
-for (let i = 0; i < 220; i++) {
-  const x = Math.random() * width;
-  const y = Math.random() * height;
-  const s = 10 + Math.random() * 40;
-  tex.fill(120, 84, 52, 18);
-  tex.circle(x, y, s);
-}
+  for (let i = 0; i < 220; i++) {
+    const x = Math.random() * width;
+    const y = Math.random() * height;
+    const s = 10 + Math.random() * 40;
+    tex.fill(120, 84, 52, 18);
+    tex.circle(x, y, s);
   }
 
   // мягкий блик
   tex.noFill();
-  tex.stroke(255, 255, 255, 14);
+  tex.stroke(255, 255, 255, 12);
   tex.strokeWeight(1);
-  for (let r = 0; r < 70; r++) {
-    const k = r / 70;
+  for (let r = 0; r < 60; r++) {
+    const k = r / 60;
     tex.ellipse(width * 0.5, height * 0.58, width * (0.20 + k * 0.85), height * (0.10 + k * 0.50));
   }
 
@@ -460,6 +441,33 @@ for (let i = 0; i < 220; i++) {
   texImg.mask(maskImg);
 
   return texImg;
+}
+
+function getAlphaBounds(img) {
+  if (!img) return null;
+
+  img.loadPixels();
+  const w = img.width, h = img.height;
+  const px = img.pixels;
+
+  let minX = w, minY = h, maxX = -1, maxY = -1;
+  const step = 6;
+
+  for (let y = 0; y < h; y += step) {
+    for (let x = 0; x < w; x += step) {
+      const i = 4 * (y * w + x);
+      const a = px[i + 3];
+      if (a > 10) {
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  if (maxX < 0) return null;
+  return { x: minX, y: minY, w: (maxX - minX + 1), h: (maxY - minY + 1) };
 }
 
 // ---------- МАТЕМАТИКА ----------
@@ -503,9 +511,8 @@ function showResult(value, ms) {
 
     drawResultScreen(current, endVal);
 
-    if (t < 1) {
-      requestAnimationFrame(frame);
-    } else {
+    if (t < 1) requestAnimationFrame(frame);
+    else {
       drawResultScreen(endVal, endVal);
       setResetTimer(ms);
     }
@@ -521,6 +528,7 @@ function drawResultScreen(displayValue, finalValue) {
   const pctSize = clamp(base * 0.13, 38, 84);
   const commentSize = clamp(base * 0.055, 16, 32);
 
+  // Компоновка: % -> блин -> комментарий
   const pctY = height * 0.24;
   const blinCenterY = height * 0.52;
   const commentY = height * 0.74;
@@ -533,12 +541,12 @@ function drawResultScreen(displayValue, finalValue) {
   textSize(pctSize);
   text(`🥞 ${Math.round(displayValue)}%`, width / 2, pctY);
 
-  // 2) Блин (рисуем только bounding box из full-screen картинки)
+  // 2) Блин (вписываем bounds в окно, контур рисуем в тех же координатах)
   if (blinMaskedImg && lastBlinBounds) {
     const bb = lastBlinBounds;
 
     const maxW = width * 0.88;
-    const maxH = height * 0.42;
+    const maxH = height * 0.42; // чтобы не лез на комментарий
     const s = Math.min(maxW / bb.w, maxH / bb.h);
 
     const dw = bb.w * s;
@@ -547,30 +555,25 @@ function drawResultScreen(displayValue, finalValue) {
     const dx = width / 2 - dw / 2;
     const dy = blinCenterY - dh / 2;
 
-    // Рисуем с source-rect (9 аргументов)
+    // заливаем текстуру блина
     image(blinMaskedImg, dx, dy, dw, dh, bb.x, bb.y, bb.w, bb.h);
 
-    // 2b) Контур поверх (тонкий коричневый)
-    // 2b) Контур поверх (тонкий коричневый, в тех же координатах, что и блин)
-if (lastPts) {
-  noFill();
-  stroke(120, 84, 52, 170);                // коричневый
-  strokeWeight(clamp(base * 0.0045, 1.5, 3)); // тоньше
-  strokeJoin(ROUND);
-  strokeCap(ROUND);
+    // контур сверху — тонкий коричневый
+    if (lastPts && lastPts.length > 10) {
+      noFill();
+      stroke(120, 84, 52, 170);
+      strokeWeight(clamp(base * 0.0045, 1.5, 3));
+      strokeJoin(ROUND);
+      strokeCap(ROUND);
 
-  beginShape();
-  for (let i = 0; i < lastPts.length; i += 2) {
-    const p = lastPts[i];
-    vertex(
-      dx + (p.x - bb.x) * s,
-      dy + (p.y - bb.y) * s
-    );
-  }
-  endShape(CLOSE);
-  noStroke();
-}
-    
+      beginShape();
+      for (let i = 0; i < lastPts.length; i += 2) {
+        const p = lastPts[i];
+        vertex(dx + (p.x - bb.x) * s, dy + (p.y - bb.y) * s);
+      }
+      endShape(CLOSE);
+      noStroke();
+    }
   }
 
   // 3) Комментарий
@@ -594,6 +597,8 @@ function showMessage(lines, ms, kind = "info") {
   state = "message";
   headerText = "";
   blinMaskedImg = null;
+  lastBlinBounds = null;
+  lastPts = null;
 
   background(...THEME.bg);
 
@@ -618,7 +623,7 @@ function getComment(v) {
   return "Это арт-объект, не блин 😈";
 }
 
-// ---------- ТЕКСТ: влезает всегда ----------
+// ---------- ТЕКСТ: всегда влезает ----------
 function drawFittedTextBlock(lines, cx, cy, maxW, maxH, colorArr = null) {
   let size = clamp(min(width, height) * 0.09, 18, 46);
 
@@ -682,80 +687,6 @@ function clamp(v, a, b) {
   return Math.max(a, Math.min(b, v));
 }
 
-function getBlinBounds(img) {
-  img.loadPixels();
-  const w = img.width;
-  const h = img.height;
-  const px = img.pixels;
-
-  let minX = w, minY = h, maxX = -1, maxY = -1;
-
-  // Прорежаем, чтобы не тормозило: шаг 4..8 обычно ок
-  const step = 6;
-
-  for (let y = 0; y < h; y += step) {
-    for (let x = 0; x < w; x += step) {
-      const i = 4 * (y * w + x);
-      const a = px[i + 3]; // alpha
-      if (a > 10) {
-        if (x < minX) minX = x;
-        if (y < minY) minY = y;
-        if (x > maxX) maxX = x;
-        if (y > maxY) maxY = y;
-      }
-    }
-  }
-
-  if (maxX < 0) return null;
-
-  const bw = maxX - minX + 1;
-  const bh = maxY - minY + 1;
-
-  return {
-    x: minX,
-    y: minY,
-    w: bw,
-    h: bh,
-    cx: minX + bw / 2,
-    cy: minY + bh / 2
-  };
-}
-
 function pointInRect(px, py, r) {
   return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
-}
-function getAlphaBounds(img) {
-  img.loadPixels();
-  const w = img.width, h = img.height;
-  const px = img.pixels;
-
-  let minX = w, minY = h, maxX = -1, maxY = -1;
-  const step = 6; // прореживание ради скорости
-
-  for (let y = 0; y < h; y += step) {
-    for (let x = 0; x < w; x += step) {
-      const i = 4 * (y * w + x);
-      const a = px[i + 3];
-      if (a > 10) {
-        if (x < minX) minX = x;
-        if (y < minY) minY = y;
-        if (x > maxX) maxX = x;
-        if (y > maxY) maxY = y;
-      }
-    }
-  }
-
-  if (maxX < 0) return null;
-
-  return { x: minX, y: minY, w: (maxX - minX + 1), h: (maxY - minY + 1) };
-}
-function getPointsBounds(pts) {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const p of pts) {
-    if (p.x < minX) minX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y > maxY) maxY = p.y;
-  }
-  return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY };
 }
