@@ -407,16 +407,26 @@ function buildMaskedBlin(pts) {
   tex.fill(...THEME.pancake);
   tex.rect(0, 0, width, height);
 
-  // текстура сильнее (чтобы было видно)
-  tex.noStroke();
-  for (let i = 0; i < 1600; i++) {
-    const x = Math.random() * width;
-    const y = Math.random() * height;
-    const s = 2 + Math.random() * 7;
+  // текстура: мелкие точки + крупные пятна (видно всегда)
+tex.noStroke();
 
-    // тёплый коричневый/поджар (не красный), чтобы выглядело “блинно”
-    tex.fill(120, 84, 52, 26);
-    tex.circle(x, y, s);
+// мелкая "крапинка"
+for (let i = 0; i < 2600; i++) {
+  const x = Math.random() * width;
+  const y = Math.random() * height;
+  const s = 1 + Math.random() * 5;
+  tex.fill(120, 84, 52, 42);  // коричневый, заметнее
+  tex.circle(x, y, s);
+}
+
+// крупные "поджаренные" пятна
+for (let i = 0; i < 220; i++) {
+  const x = Math.random() * width;
+  const y = Math.random() * height;
+  const s = 10 + Math.random() * 40;
+  tex.fill(120, 84, 52, 18);
+  tex.circle(x, y, s);
+}
   }
 
   // мягкий блик
@@ -528,7 +538,7 @@ function drawResultScreen(displayValue, finalValue) {
     const bb = lastBlinBounds;
 
     const maxW = width * 0.88;
-    const maxH = height * 0.48;
+    const maxH = height * 0.42;
     const s = Math.min(maxW / bb.w, maxH / bb.h);
 
     const dw = bb.w * s;
@@ -541,30 +551,26 @@ function drawResultScreen(displayValue, finalValue) {
     image(blinMaskedImg, dx, dy, dw, dh, bb.x, bb.y, bb.w, bb.h);
 
     // 2b) Контур поверх (тонкий коричневый)
-    if (lastPts) {
-      const pb = getPointsBounds(lastPts);
+    // 2b) Контур поверх (тонкий коричневый, в тех же координатах, что и блин)
+if (lastPts) {
+  noFill();
+  stroke(120, 84, 52, 170);                // коричневый
+  strokeWeight(clamp(base * 0.0045, 1.5, 3)); // тоньше
+  strokeJoin(ROUND);
+  strokeCap(ROUND);
 
-      // тот же scale, но для точек
-      const sx = dw / pb.w;
-      const sy = dh / pb.h;
-
-      // центрируем точки в то же окно
-      const ox = dx - pb.minX * sx;
-      const oy = dy - pb.minY * sy;
-
-      noFill();
-      stroke(120, 84, 52, 180); // коричневый
-      strokeWeight(clamp(base * 0.006, 2, 4)); // тоньше!
-      strokeJoin(ROUND);
-      strokeCap(ROUND);
-
-      beginShape();
-      for (let i = 0; i < lastPts.length; i += 2) {
-        vertex(ox + lastPts[i].x * sx, oy + lastPts[i].y * sy);
-      }
-      endShape(CLOSE);
-      noStroke();
-    }
+  beginShape();
+  for (let i = 0; i < lastPts.length; i += 2) {
+    const p = lastPts[i];
+    vertex(
+      dx + (p.x - bb.x) * s,
+      dy + (p.y - bb.y) * s
+    );
+  }
+  endShape(CLOSE);
+  noStroke();
+}
+    
   }
 
   // 3) Комментарий
