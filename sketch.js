@@ -46,7 +46,8 @@ let startBtn = null;
 let headerText = "";
 
 let logoImg = null;
-let blinMaskedImg = null;
+let blinFillImg = null;     // обрезанный блин (заливка)
+let blinOutlineImg = null;  // обрезанный контур
 
 // ---------- SETUP ----------
 function setup() {
@@ -75,6 +76,8 @@ function setup() {
   );
 
   resetToIdle();
+  blinFillImg = null;
+  blinOutlineImg = null;
 }
 
 function windowResized() {
@@ -363,7 +366,9 @@ function finishDrawing() {
   }
 
   // строим "блин по контуру"
-  blinMaskedImg = buildMaskedBlin(points);
+  const blin = buildMaskedBlin(points);
+  blinFillImg = blin.fill;
+  blinOutlineImg = blin.outline;
 
   // считаем %
   const roundness = calculateRoundness(points);
@@ -389,18 +394,17 @@ function autoClosePath(from, to) {
 
 // ---------- ТЕКСТУРА БЛИНА ПО КОНТУРУ ----------
 function buildMaskedBlin(pts) {
-  const d = pixelDensity(); // важнейшее: синхронизируем плотность
+  const d = pixelDensity();
 
-  // текстура
+  // 1) Текстура
   const tex = createGraphics(width, height);
   tex.pixelDensity(d);
   tex.clear();
-
   tex.noStroke();
   tex.fill(...THEME.pancake);
   tex.rect(0, 0, width, height);
 
-  // "поджарка" точками
+  // крап "поджарки"
   tex.noStroke();
   for (let i = 0; i < 900; i++) {
     const x = Math.random() * width;
@@ -410,7 +414,7 @@ function buildMaskedBlin(pts) {
     tex.circle(x, y, s);
   }
 
-  // легкий блик/объем (очень мягко)
+  // мягкий блик
   tex.noFill();
   tex.stroke(255, 255, 255, 14);
   tex.strokeWeight(1);
@@ -419,10 +423,10 @@ function buildMaskedBlin(pts) {
     tex.ellipse(width * 0.5, height * 0.58, width * (0.20 + k * 0.85), height * (0.10 + k * 0.50));
   }
 
-  // маска
+  // 2) Маска (залитая фигура)
   const maskG = createGraphics(width, height);
   maskG.pixelDensity(d);
-  maskG.clear(); // прозрачный фон для альфы
+  maskG.clear();
   maskG.noStroke();
   maskG.fill(255);
 
@@ -433,15 +437,42 @@ function buildMaskedBlin(pts) {
   }
   maskG.endShape(CLOSE);
 
-  // применяем маску
   const texImg = tex.get();
   const maskImg = maskG.get();
-
   texImg.loadPixels();
   maskImg.loadPixels();
   texImg.mask(maskImg);
 
-  return texImg;
+  // 3) Находим границы блина (по альфе)
+  const bb = getAlphaBounds(texImg);
+  if (!bb) {
+    return { fill: texImg, outline: null };
+  }
+
+  // 4) Обрезаем (crop) заливку
+  const fillCrop = texImg.get(bb.x, bb.y, bb.w, bb.h);
+
+  // 5) Рисуем контур (коричневый) и тоже crop
+  const outlineG = createGraphics(width, height);
+  outlineG.pixelDensity(d);
+  outlineG.clear();
+  outlineG.noFill();
+
+  // "лёгкий коричневый" контур (можно подправить)
+  outlineG.stroke(120, 84, 52, 200);
+  outlineG.strokeWeight(6);
+  outlineG.strokeJoin(ROUND);
+  outlineG.strokeCap(ROUND);
+
+  outlineG.beginShape();
+  for (let i = 0; i < pts.length; i += 2) {
+    outlineG.vertex(pts[i].x, pts[i].y);
+  }
+  outlineG.endShape(CLOSE);
+
+  const outlineImg = outlineG.get(bb.x, bb.y, bb.w, bb.h);
+
+  return { fill: fillCrop, outline: outlineImg };
 }
 
 // ---------- МАТЕМАТИКА ----------
@@ -500,15 +531,13 @@ function drawResultScreen(displayValue, finalValue) {
   background(...THEME.bg);
 
   const base = min(width, height);
-
-  // Типографика
   const pctSize = clamp(base * 0.13, 38, 84);
   const commentSize = clamp(base * 0.055, 16, 32);
 
-  // Более “сбитая” вертикальная сетка
-  const pctY = height * 0.18;
-  const blinCenterY = height * 0.54;
-  const commentY = height * 0.78;
+  // Позиции (сдвинул вниз/вверх как ты просил)
+  const pctY = height * 0.24;       // процент НИЖЕ
+  const blinCenterY = height * 0.52; // блин по центру
+  const commentY = height * 0.74;   // комментарий ВЫШЕ
 
   // 1) Процент
   const pctColor = finalValue >= 85 ? THEME.pancake : (finalValue < 45 ? THEME.error : THEME.primary);
@@ -518,32 +547,31 @@ function drawResultScreen(displayValue, finalValue) {
   textSize(pctSize);
   text(`🥞 ${Math.round(displayValue)}%`, width / 2, pctY);
 
-  // 2) Блин (крупнее + по центру по bounding box)
-  if (blinMaskedImg) {
-    const bb = getBlinBounds(blinMaskedImg);
-    if (bb) {
-      // окно под блин — крупное
-      const maxW = width * 0.88;
-      const maxH = height * 0.55;
+  // 2) Блин (крупный и по центру)
+  if (blinFillImg) {
+    const maxW = width * 0.86;
+    const maxH = height * 0.44;
 
-      const s = Math.min(maxW / bb.w, maxH / bb.h);
+    const s = Math.min(maxW / blinFillImg.width, maxH / blinFillImg.height);
+    const w = blinFillImg.width * s;
+    const h = blinFillImg.height * s;
 
-      const dw = bb.w * s;
-      const dh = bb.h * s;
+    const x = (width - w) / 2;
+    const y = blinCenterY - h / 2;
 
-      // хотим, чтобы центр блина совпал с центром экрана по X и blinCenterY по Y
-      const dx = width / 2 - (bb.cx * s);
-      const dy = blinCenterY - (bb.cy * s);
-
-      // тень прямо под блином
-      noStroke();
-      fill(0, 0, 0, 16);
-      ellipse(width / 2, dy + (bb.y + bb.h) * s + 10, dw * 0.55, dh * 0.08);
-
-      // рисуем картинку со сдвигом
-      image(blinMaskedImg, dx, dy, blinMaskedImg.width * s, blinMaskedImg.height * s);
-    }
+    image(blinFillImg, x, y, w, h);
+    if (blinOutlineImg) image(blinOutlineImg, x, y, w, h);
   }
+
+  // 3) Комментарий
+  fill(...THEME.primary);
+  textSize(commentSize);
+  drawWrappedText(getComment(finalValue), width / 2, commentY, width * 0.86, commentSize * 1.25);
+
+  // подсказка
+  fill(...THEME.hint);
+  textSize(clamp(base * 0.035, 12, 18));
+  text("Тапни по экрану — новый блин", width / 2, height * 0.92);
 
   // 3) Комментарий
   fill(...THEME.primary);
@@ -695,4 +723,29 @@ function getBlinBounds(img) {
 
 function pointInRect(px, py, r) {
   return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+}
+function getAlphaBounds(img) {
+  img.loadPixels();
+  const w = img.width, h = img.height;
+  const px = img.pixels;
+
+  let minX = w, minY = h, maxX = -1, maxY = -1;
+  const step = 6; // прореживание ради скорости
+
+  for (let y = 0; y < h; y += step) {
+    for (let x = 0; x < w; x += step) {
+      const i = 4 * (y * w + x);
+      const a = px[i + 3];
+      if (a > 10) {
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  if (maxX < 0) return null;
+
+  return { x: minX, y: minY, w: (maxX - minX + 1), h: (maxY - minY + 1) };
 }
