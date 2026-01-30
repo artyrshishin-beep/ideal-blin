@@ -1,4 +1,4 @@
-// ===== Идеальный блин — откат до контура (стабильная маска + текстура) =====
+// ===== Идеальный блин — стабильная версия (без контура) =====
 
 // ---------- БРЕНДБУК ----------
 const THEME = {
@@ -11,21 +11,21 @@ const THEME = {
   light: [255, 255, 255],
 };
 
+// ---------- НАСТРОЙКИ ----------
 const CALIBRATION_K = 225;
 
-// Тайминги
 const RESULT_MS = 30000; // 30 секунд
 const MSG_MS = 3000;
 const COUNTUP_MS = 850;
-
-// Рисование
-let STROKE_W = 20;
-let FILL_STEP = 1.7;
 
 const MIN_POINTS = 80;
 const MIN_PATH_LEN = 500;
 const AUTO_CLOSE_GAP = 160;
 const AUTO_CLOSE_STEP = 6;
+
+// Кисть
+let STROKE_W = 20;
+let FILL_STEP = 1.7;
 
 // ---------- СОСТОЯНИЕ ----------
 let cnv;
@@ -44,13 +44,14 @@ let headerText = "";
 
 let logoImg = null;
 
-// ✅ Итоговый "блин по маске" (уже готовая картинка)
+// итоговый блин (текстура + маска) — картинка размера canvas
 let blinMaskedImg = null;
 
+// ---------- SETUP ----------
 function setup() {
   cnv = createCanvas(windowWidth, windowHeight);
 
-  // Чёткость (и для лого, и для текста)
+  // чёткость лого/текста
   pixelDensity(Math.min(2, window.devicePixelRatio || 1));
   smooth();
 
@@ -61,7 +62,7 @@ function setup() {
   el.addEventListener("pointermove", onPointerMove, { passive: false });
   window.addEventListener("pointerup", onPointerUp, { passive: false });
 
-  // Лого грузим без блокировки
+  // лого без preload (не блокирует)
   loadImage(
     "assets/logo.png",
     (img) => {
@@ -329,7 +330,7 @@ function finishDrawing() {
     return;
   }
 
-  // ✅ создаём блин по маске (картинка на весь экран)
+  // блин-текстура по маске
   blinMaskedImg = buildMaskedBlin(points);
 
   const roundness = calculateRoundness(points);
@@ -339,7 +340,6 @@ function finishDrawing() {
 function autoClosePath(from, to) {
   const d = dist(from.x, from.y, to.x, to.y);
   const steps = max(1, Math.ceil(d / AUTO_CLOSE_STEP));
-
   for (let i = 1; i <= steps; i++) {
     const t = i / steps;
     points.push({ x: lerp(from.x, to.x, t), y: lerp(from.y, to.y, t) });
@@ -354,12 +354,11 @@ function buildMaskedBlin(pts) {
   tex.pixelDensity(d);
   tex.clear();
 
-  // базовый цвет блина
   tex.noStroke();
   tex.fill(...THEME.pancake);
   tex.rect(0, 0, width, height);
 
-  // крапинка (видимая)
+  // заметная текстура (крапинка + пятна)
   tex.noStroke();
   for (let i = 0; i < 2600; i++) {
     const x = Math.random() * width;
@@ -376,7 +375,7 @@ function buildMaskedBlin(pts) {
     tex.circle(x, y, s);
   }
 
-  // лёгкий объём
+  // мягкий блик
   tex.noFill();
   tex.stroke(255, 255, 255, 12);
   tex.strokeWeight(1);
@@ -460,51 +459,54 @@ function showResult(value, ms) {
 
 function drawResultScreen(displayValue, finalValue) {
   background(...THEME.bg);
-  // --- БЛИН ПОД ПРОЦЕНТОМ ---
-if (blinMaskedImg) {
-  const blinMaxW = width * 0.7;
-  const blinMaxH = height * 0.38;
-
-  // так как blinMaskedImg размером с canvas,
-  // мы просто вписываем его как картинку
-  const s = Math.min(
-    blinMaxW / blinMaskedImg.width,
-    blinMaxH / blinMaskedImg.height
-  );
-
-  const w = blinMaskedImg.width * s;
-  const h = blinMaskedImg.height * s;
-
-  const x = width / 2 - w / 2;
-  const y = height * 0.32; // 👈 ключевая строка — под процентом
-
-  image(blinMaskedImg, x, y, w, h);
-}
-    image(blinMaskedImg, 0, 0, width, height);
-  }
 
   const base = min(width, height);
-  const pctSize = clamp(base * 0.14, 40, 88);
-  const commentSize = clamp(base * 0.055, 16, 32);
+  const pctSize = clamp(base * 0.14, 42, 92);
+  const commentSize = clamp(base * 0.055, 16, 34);
 
-  // % сверху, комментарий снизу (простая стабильная верстка)
   const pctY = height * 0.18;
-  const commentY = height * 0.82;
+  const blinY = height * 0.28;
+  const commentY = height * 0.74;
 
-  const pctColor = finalValue >= 85 ? THEME.pancake : (finalValue < 45 ? THEME.error : THEME.primary);
+  // 1) Процент
+  const pctColor =
+    finalValue >= 85 ? THEME.pancake :
+    (finalValue < 45 ? THEME.error : THEME.primary);
+
   noStroke();
   fill(...pctColor);
   textAlign(CENTER, CENTER);
   textSize(pctSize);
   text(`🥞 ${Math.round(displayValue)}%`, width / 2, pctY);
 
+  // 2) Блин (крупнее ~1.5x и правее)
+  if (blinMaskedImg) {
+    const maxW = width * 0.95;
+    const maxH = height * 0.58;
+
+    const s0 = Math.min(maxW / blinMaskedImg.width, maxH / blinMaskedImg.height);
+    const s = s0 * 1.5;
+
+    const w = blinMaskedImg.width * s;
+    const h = blinMaskedImg.height * s;
+
+    const xOffset = width * 0.06; // правее
+    const x = width / 2 - w / 2 + xOffset;
+    const y = blinY;
+
+    image(blinMaskedImg, x, y, w, h);
+  }
+
+  // 3) Комментарий
   fill(...THEME.primary);
   textSize(commentSize);
   drawWrappedText(getComment(finalValue), width / 2, commentY, width * 0.86, commentSize * 1.25);
 
+  // Подсказка
   fill(...THEME.hint);
   textSize(clamp(base * 0.04, 12, 20));
-  text("Тапни по экрану — новый блин", width / 2, height * 0.93);
+  textAlign(CENTER, CENTER);
+  text("Тапни по экрану — новый блин", width / 2, height * 0.92);
 }
 
 function easeOutCubic(t) {
@@ -517,7 +519,6 @@ function showMessage(lines, ms) {
   blinMaskedImg = null;
 
   background(...THEME.bg);
-
   drawFittedTextBlock(lines, width / 2, height / 2, width * 0.88, height * 0.70, THEME.error);
 
   fill(...THEME.hint);
