@@ -490,7 +490,7 @@ function drawResultScreen(displayValue, finalValue) {
     const w = blinMaskedImg.width * s;
     const h = blinMaskedImg.height * s;
 
-    const xOffset = width * 0.06; // правее
+    const xOffset = width * 0.23; // правее
     const x = width / 2 - w / 2 + xOffset;
     const y = blinY;
 
