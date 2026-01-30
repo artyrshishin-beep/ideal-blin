@@ -461,12 +461,12 @@ function drawResultScreen(displayValue, finalValue) {
   background(...THEME.bg);
 
   const base = min(width, height);
-  const pctSize = clamp(base * 0.14, 42, 92);
+  const pctSize = clamp(base * 0.17, 50, 110);
   const commentSize = clamp(base * 0.055, 16, 34);
 
-  const pctY = height * 0.18;
+  const pctY = height * 0.20;
   const blinY = height * 0.28;
-  const commentY = height * 0.74;
+  const commentY = height * 0.68;
 
   // 1) Процент
   const pctColor =
@@ -506,7 +506,7 @@ function drawResultScreen(displayValue, finalValue) {
   fill(...THEME.hint);
   textSize(clamp(base * 0.04, 12, 20));
   textAlign(CENTER, CENTER);
-  text("Тапни по экрану — новый блин", width / 2, height * 0.92);
+  text("Тапни по экрану — новый блин", width / 2, height * 0.86);
 }
 
 function easeOutCubic(t) {
