@@ -460,9 +460,26 @@ function showResult(value, ms) {
 
 function drawResultScreen(displayValue, finalValue) {
   background(...THEME.bg);
+  // --- БЛИН ПОД ПРОЦЕНТОМ ---
+if (blinMaskedImg) {
+  const blinMaxW = width * 0.7;
+  const blinMaxH = height * 0.38;
 
-  // Блин как “фон результата” (как было до контура)
-  if (blinMaskedImg) {
+  // так как blinMaskedImg размером с canvas,
+  // мы просто вписываем его как картинку
+  const s = Math.min(
+    blinMaxW / blinMaskedImg.width,
+    blinMaxH / blinMaskedImg.height
+  );
+
+  const w = blinMaskedImg.width * s;
+  const h = blinMaskedImg.height * s;
+
+  const x = width / 2 - w / 2;
+  const y = height * 0.32; // 👈 ключевая строка — под процентом
+
+  image(blinMaskedImg, x, y, w, h);
+}
     image(blinMaskedImg, 0, 0, width, height);
   }
 
