@@ -32,6 +32,10 @@ let cnv;
 let state = "idle"; // idle | ready | drawing | result | message
 let resetTimerId = null;
 
+// --- декор / паттерны ---
+let patStart1, patStart2;
+let patResult1, patResult2;
+
 let isDrawing = false;
 let lastPointer = { x: 0, y: 0 };
 let rafId = null;
@@ -71,6 +75,10 @@ function setup() {
     },
     () => { logoImg = null; }
   );
+  loadImage("assets/pattern_start_1.png", img => patStart1 = img);
+  loadImage("assets/pattern_start_2.png", img => patStart2 = img);
+  loadImage("assets/pattern_result_1.png", img => patResult1 = img);
+  loadImage("assets/pattern_result_2.png", img => patResult2 = img);
 
   resetToIdle();
 }
@@ -169,6 +177,13 @@ function resetToIdle() {
 
 function drawIdleScreen() {
   background(...THEME.bg);
+  // --- паттерны старта ---
+  if (patStart1) {
+  image(patStart1, 0, height * 0.55, width * 0.35, width * 0.35);
+}
+if (patStart2) {
+  image(patStart2, width * 0.65, height * 0.10, width * 0.30, width * 0.30);
+}
   drawDecor();
   drawLogoTop();
 
@@ -459,6 +474,14 @@ function showResult(value, ms) {
 
 function drawResultScreen(displayValue, finalValue) {
   background(...THEME.bg);
+  // --- паттерны результата ---
+if (patResult1) {
+  image(patResult1, width * 0.05, height * 0.60, width * 0.25, width * 0.25);
+}
+
+if (patResult2) {
+  image(patResult2, width * 0.70, height * 0.05, width * 0.22, width * 0.22);
+}
 
   const base = min(width, height);
   const pctSize = clamp(base * 0.17, 50, 110);
