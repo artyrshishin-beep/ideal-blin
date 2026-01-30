@@ -1,4 +1,4 @@
-// ===== Идеальный блин — full актуальная версия (брендбук + лого + набегание + блин по контуру) =====
+// ===== Идеальный блин — актуальная стабильная версия =====
 
 // ---------- БРЕНДБУК ----------
 const THEME = {
@@ -11,7 +11,7 @@ const THEME = {
   light: [255, 255, 255],     // белый
 };
 
-// алиас на всякий случай
+// алиас (на всякий случай)
 const BG = THEME.bg;
 
 // ---------- НАСТРОЙКИ ----------
@@ -21,9 +21,10 @@ const MIN_PATH_LEN = 500;
 const AUTO_CLOSE_GAP = 160;
 const AUTO_CLOSE_STEP = 6;
 
-const CALIBRATION_K = 225;     // твоя текущая калибровка
+const CALIBRATION_K = 225;     // твоя текущая калибровка (как ты сказал)
 
-const RESULT_MS = 4500;
+// ✅ таймер результата 30 сек
+const RESULT_MS = 30000;
 const MSG_MS = 3000;
 const COUNTUP_MS = 850;
 
@@ -48,16 +49,16 @@ let headerText = "";
 
 let logoImg = null;
 
-// Блин по контуру (full-screen картинка) + bounds по альфе + исходные точки
+// Блин по контуру (full-screen картинка) + bounds по точкам + исходные точки
 let blinMaskedImg = null;
-let lastBlinBounds = null;
+let lastBlinBounds = null; // bounds в координатах исходного canvas (source rect)
 let lastPts = null;
 
 // ---------- SETUP ----------
 function setup() {
   cnv = createCanvas(windowWidth, windowHeight);
 
-  // Чёткость
+  // Чёткость (лого/текст)
   pixelDensity(Math.min(2, window.devicePixelRatio || 1));
   smooth();
 
@@ -315,14 +316,14 @@ function stampSegment(a, b) {
 }
 
 function stampBrush(x, y) {
-  // контур блина (желтый)
+  // линия рисования (жёлтая)
   noStroke();
   fill(...THEME.pancake);
   circle(x, y, STROKE_W);
 
-  // легкий "поджар" по краю (очень тонко)
+  // лёгкий "поджар" по краю линии (тонко)
   noFill();
-  stroke(120, 84, 52, 70);
+  stroke(120, 84, 52, 60);
   strokeWeight(1.2);
   circle(x, y, STROKE_W * 0.92);
   noStroke();
@@ -356,8 +357,18 @@ function finishDrawing() {
 
   // блин по контуру
   blinMaskedImg = buildMaskedBlin(points);
-  lastBlinBounds = getAlphaBounds(blinMaskedImg);
+
+  // bounds по точкам (надёжно), с запасом под толщину линии
   lastPts = points.slice();
+  lastBlinBounds = getPointsBounds(lastPts, STROKE_W * 2);
+
+  // ограничим bounds в пределах картинки (source rect)
+  if (blinMaskedImg && lastBlinBounds) {
+    lastBlinBounds.x = Math.max(0, Math.min(lastBlinBounds.x, blinMaskedImg.width - 1));
+    lastBlinBounds.y = Math.max(0, Math.min(lastBlinBounds.y, blinMaskedImg.height - 1));
+    lastBlinBounds.w = Math.max(1, Math.min(lastBlinBounds.w, blinMaskedImg.width - lastBlinBounds.x));
+    lastBlinBounds.h = Math.max(1, Math.min(lastBlinBounds.h, blinMaskedImg.height - lastBlinBounds.y));
+  }
 
   const roundness = calculateRoundness(points);
   showResult(roundness, RESULT_MS);
@@ -419,7 +430,7 @@ function buildMaskedBlin(pts) {
     tex.ellipse(width * 0.5, height * 0.58, width * (0.20 + k * 0.85), height * (0.10 + k * 0.50));
   }
 
-  // маска
+  // маска (залитая фигура по точкам)
   const maskG = createGraphics(width, height);
   maskG.pixelDensity(d);
   maskG.clear();
@@ -441,33 +452,6 @@ function buildMaskedBlin(pts) {
   texImg.mask(maskImg);
 
   return texImg;
-}
-
-function getAlphaBounds(img) {
-  if (!img) return null;
-
-  img.loadPixels();
-  const w = img.width, h = img.height;
-  const px = img.pixels;
-
-  let minX = w, minY = h, maxX = -1, maxY = -1;
-  const step = 6;
-
-  for (let y = 0; y < h; y += step) {
-    for (let x = 0; x < w; x += step) {
-      const i = 4 * (y * w + x);
-      const a = px[i + 3];
-      if (a > 10) {
-        if (x < minX) minX = x;
-        if (y < minY) minY = y;
-        if (x > maxX) maxX = x;
-        if (y > maxY) maxY = y;
-      }
-    }
-  }
-
-  if (maxX < 0) return null;
-  return { x: minX, y: minY, w: (maxX - minX + 1), h: (maxY - minY + 1) };
 }
 
 // ---------- МАТЕМАТИКА ----------
@@ -525,17 +509,16 @@ function drawResultScreen(displayValue, finalValue) {
   background(...THEME.bg);
 
   const base = min(width, height);
-
   const pctSize = clamp(base * 0.13, 38, 84);
   const commentSize = clamp(base * 0.055, 16, 32);
 
-  // Позиции текста
+  // Компоновка: % -> блин -> комментарий
   const pctY = height * 0.24;
   const commentY = height * 0.78;
 
-  // Отступы, чтобы блин был строго "между"
-  const gapTop = Math.max(18, commentSize * 1.4);     // от % до блина
-  const gapBottom = Math.max(18, commentSize * 1.4);  // от блина до комментария
+  // Зазоры, чтобы блин гарантированно был строго "между"
+  const gapTop = Math.max(18, commentSize * 1.4);
+  const gapBottom = Math.max(18, commentSize * 1.4);
 
   // 1) Процент
   const pctColor = finalValue >= 85 ? THEME.pancake : (finalValue < 45 ? THEME.error : THEME.primary);
@@ -549,15 +532,11 @@ function drawResultScreen(displayValue, finalValue) {
   if (blinMaskedImg && lastBlinBounds) {
     const bb = lastBlinBounds;
 
-    // вертикальное окно под блин
     const topLimit = pctY + pctSize / 2 + gapTop;
     const bottomLimit = commentY - commentSize / 2 - gapBottom;
-    const availableH = Math.max(60, bottomLimit - topLimit);
-
-    // горизонтальное окно
+    const availableH = Math.max(80, bottomLimit - topLimit);
     const availableW = width * 0.88;
 
-    // масштаб под окно
     const s = Math.min(availableW / bb.w, availableH / bb.h);
 
     const dw = bb.w * s;
@@ -566,7 +545,7 @@ function drawResultScreen(displayValue, finalValue) {
     const dx = width / 2 - dw / 2;
     const dy = topLimit + (availableH - dh) / 2;
 
-    // рисуем только область блина (source rect)
+    // рисуем source-rect (только область блина)
     image(blinMaskedImg, dx, dy, dw, dh, bb.x, bb.y, bb.w, bb.h);
   }
 
@@ -617,7 +596,7 @@ function getComment(v) {
   return "Это арт-объект, не блин 😈";
 }
 
-// ---------- ТЕКСТ: всегда влезает ----------
+// ---------- TEXT: влезает всегда ----------
 function drawFittedTextBlock(lines, cx, cy, maxW, maxH, colorArr = null) {
   let size = clamp(min(width, height) * 0.09, 18, 46);
 
@@ -674,6 +653,23 @@ function drawWrappedText(str, x, y, maxW, lineH) {
   for (let i = 0; i < lines.length; i++) {
     text(lines[i], x, yy + i * lineH);
   }
+}
+
+// ---------- BOUNDS по точкам (надёжно) ----------
+function getPointsBounds(pts, pad = 0) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  minX = Math.max(0, minX - pad);
+  minY = Math.max(0, minY - pad);
+  maxX = Math.min(width, maxX + pad);
+  maxY = Math.min(height, maxY + pad);
+
+  return { x: minX, y: minY, w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY) };
 }
 
 // ---------- UTILS ----------
