@@ -1,4 +1,4 @@
-// ===== Идеальный блин — стабильная версия (без контура) =====
+// ===== Идеальный блин — стабильная версия + паттерны (2 на старт, 2 на результат) =====
 
 // ---------- БРЕНДБУК ----------
 const THEME = {
@@ -32,10 +32,6 @@ let cnv;
 let state = "idle"; // idle | ready | drawing | result | message
 let resetTimerId = null;
 
-// --- декор / паттерны ---
-let patStart1, patStart2;
-let patResult1, patResult2;
-
 let isDrawing = false;
 let lastPointer = { x: 0, y: 0 };
 let rafId = null;
@@ -50,6 +46,10 @@ let logoImg = null;
 
 // итоговый блин (текстура + маска) — картинка размера canvas
 let blinMaskedImg = null;
+
+// ---------- ПАТТЕРНЫ / КАРТИНКИ ----------
+let patStart1 = null, patStart2 = null;
+let patResult1 = null, patResult2 = null;
 
 // ---------- SETUP ----------
 function setup() {
@@ -66,7 +66,7 @@ function setup() {
   el.addEventListener("pointermove", onPointerMove, { passive: false });
   window.addEventListener("pointerup", onPointerUp, { passive: false });
 
-  // лого без preload (не блокирует)
+  // Лого без preload (не блокирует)
   loadImage(
     "assets/logo.png",
     (img) => {
@@ -75,10 +75,13 @@ function setup() {
     },
     () => { logoImg = null; }
   );
-  loadImage("assets/pattern_start_1.png", img => patStart1 = img);
-  loadImage("assets/pattern_start_2.png", img => patStart2 = img);
-  loadImage("assets/pattern_result_1.png", img => patResult1 = img);
-  loadImage("assets/pattern_result_2.png", img => patResult2 = img);
+
+  // Паттерны / декор (тоже без preload)
+  loadImage("assets/pattern_start_1.png", (img) => { patStart1 = img; if (state === "idle" || state === "ready") drawIdleScreen(); });
+  loadImage("assets/pattern_start_2.png", (img) => { patStart2 = img; if (state === "idle" || state === "ready") drawIdleScreen(); });
+
+  loadImage("assets/pattern_result_1.png", (img) => { patResult1 = img; if (state === "result") redrawLastResultFrame(); });
+  loadImage("assets/pattern_result_2.png", (img) => { patResult2 = img; if (state === "result") redrawLastResultFrame(); });
 
   resetToIdle();
 }
@@ -87,6 +90,7 @@ function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
   if (state === "idle" || state === "ready") drawIdleScreen();
   if (state === "drawing") redrawHeader();
+  if (state === "result") redrawLastResultFrame();
 }
 
 // ---------- POINTER ----------
@@ -177,13 +181,20 @@ function resetToIdle() {
 
 function drawIdleScreen() {
   background(...THEME.bg);
-  // --- паттерны старта ---
+
+  // --- 2 паттерна на стартовом экране ---
+  // Подстрой позиции/размеры как хочешь
   if (patStart1) {
-  image(patStart1, 0, height * 0.55, width * 0.35, width * 0.35);
-}
-if (patStart2) {
-  image(patStart2, width * 0.65, height * 0.10, width * 0.30, width * 0.30);
-}
+    tint(255, 160);
+    image(patStart1, width * 0.03, height * 0.62, width * 0.32, width * 0.32);
+    noTint();
+  }
+  if (patStart2) {
+    tint(255, 150);
+    image(patStart2, width * 0.68, height * 0.06, width * 0.28, width * 0.28);
+    noTint();
+  }
+
   drawDecor();
   drawLogoTop();
 
@@ -333,7 +344,6 @@ function finishDrawing() {
     return;
   }
 
-  // мягко замыкаем
   const start = points[0];
   const end = points[points.length - 1];
   const gap = dist(start.x, start.y, end.x, end.y);
@@ -345,7 +355,6 @@ function finishDrawing() {
     return;
   }
 
-  // блин-текстура по маске
   blinMaskedImg = buildMaskedBlin(points);
 
   const roundness = calculateRoundness(points);
@@ -373,7 +382,7 @@ function buildMaskedBlin(pts) {
   tex.fill(...THEME.pancake);
   tex.rect(0, 0, width, height);
 
-  // заметная текстура (крапинка + пятна)
+  // текстура
   tex.noStroke();
   for (let i = 0; i < 2600; i++) {
     const x = Math.random() * width;
@@ -390,7 +399,7 @@ function buildMaskedBlin(pts) {
     tex.circle(x, y, s);
   }
 
-  // мягкий блик
+  // блик
   tex.noFill();
   tex.stroke(255, 255, 255, 12);
   tex.strokeWeight(1);
@@ -399,7 +408,7 @@ function buildMaskedBlin(pts) {
     tex.ellipse(width * 0.5, height * 0.58, width * (0.20 + k * 0.85), height * (0.10 + k * 0.50));
   }
 
-  // маска по контуру
+  // маска
   const maskG = createGraphics(width, height);
   maskG.pixelDensity(d);
   maskG.clear();
@@ -447,9 +456,13 @@ function pathLength(pts) {
 }
 
 // ---------- РЕЗУЛЬТАТ (набегание) ----------
+let _lastFinalValue = 0;
+
 function showResult(value, ms) {
   state = "result";
   clearResetTimer();
+
+  _lastFinalValue = value;
 
   const startTime = performance.now();
   const startVal = 0;
@@ -472,26 +485,37 @@ function showResult(value, ms) {
   requestAnimationFrame(frame);
 }
 
+// чтобы можно было перерисовать результат при загрузке паттернов/resize
+function redrawLastResultFrame() {
+  if (state !== "result") return;
+  drawResultScreen(_lastFinalValue, _lastFinalValue);
+}
+
 function drawResultScreen(displayValue, finalValue) {
   background(...THEME.bg);
-  // --- паттерны результата ---
-if (patResult1) {
-  image(patResult1, width * 0.05, height * 0.60, width * 0.25, width * 0.25);
-}
 
-if (patResult2) {
-  image(patResult2, width * 0.70, height * 0.05, width * 0.22, width * 0.22);
-}
+  // --- 2 картинки на экране результата ---
+  // Подстрой позиции/размеры/прозрачность
+  if (patResult1) {
+    tint(255, 140);
+    image(patResult1, width * 0.05, height * 0.62, width * 0.22, width * 0.22);
+    noTint();
+  }
+  if (patResult2) {
+    tint(255, 140);
+    image(patResult2, width * 0.73, height * 0.06, width * 0.22, width * 0.22);
+    noTint();
+  }
 
   const base = min(width, height);
-  const pctSize = clamp(base * 0.17, 50, 110);
+  const pctSize = clamp(base * 0.14, 42, 92);
   const commentSize = clamp(base * 0.055, 16, 34);
 
-  const pctY = height * 0.20;
+  const pctY = height * 0.18;
   const blinY = height * 0.28;
-  const commentY = height * 0.68;
+  const commentY = height * 0.74;
 
-  // 1) Процент
+  // Процент
   const pctColor =
     finalValue >= 85 ? THEME.pancake :
     (finalValue < 45 ? THEME.error : THEME.primary);
@@ -502,7 +526,7 @@ if (patResult2) {
   textSize(pctSize);
   text(`🥞 ${Math.round(displayValue)}%`, width / 2, pctY);
 
-  // 2) Блин (крупнее ~1.5x и правее)
+  // Блин (подстроишь xOffset как ты делал)
   if (blinMaskedImg) {
     const maxW = width * 0.95;
     const maxH = height * 0.58;
@@ -513,14 +537,14 @@ if (patResult2) {
     const w = blinMaskedImg.width * s;
     const h = blinMaskedImg.height * s;
 
-    const xOffset = width * 0.23; // правее
+    const xOffset = width * 0.23; // как ты подобрал
     const x = width / 2 - w / 2 + xOffset;
     const y = blinY;
 
     image(blinMaskedImg, x, y, w, h);
   }
 
-  // 3) Комментарий
+  // Комментарий
   fill(...THEME.primary);
   textSize(commentSize);
   drawWrappedText(getComment(finalValue), width / 2, commentY, width * 0.86, commentSize * 1.25);
@@ -529,7 +553,7 @@ if (patResult2) {
   fill(...THEME.hint);
   textSize(clamp(base * 0.04, 12, 20));
   textAlign(CENTER, CENTER);
-  text("Тапни по экрану — новый блин", width / 2, height * 0.86);
+  text("Тапни по экрану — новый блин", width / 2, height * 0.92);
 }
 
 function easeOutCubic(t) {
