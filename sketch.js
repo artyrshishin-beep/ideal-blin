@@ -198,7 +198,7 @@ function drawIdleScreen() {
   drawDecor();
   drawLogoTop();
 
-  const lines = ["Нарисуй идеальный блин 🥞", "Нажми «НАЧАТЬ»"];
+  const lines = ["не рисуй ничего. все и так идеально 🥞", "Нажми «201021010220НАЧАТЬ»"];
   drawFittedTextBlock(lines, width / 2, height * 0.33, width * 0.88, height * 0.38);
 
   const base = min(width, height);
